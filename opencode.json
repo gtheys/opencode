@@ -1,0 +1,43 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "postgres": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@henkey/postgres-mcp-server"
+      ],
+      "enabled": true,
+      "environment": {
+        "POSTGRES_CONNECTION_STRING": "postgres://postgres:localpassword@localhost:5432/salaryhero?sslmode=disable"
+      }
+    },
+    "playwright": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "enabled": true,
+      "environment": {
+        "PLAYWRIGHT_LAUNCH_OPTIONS": "{\"channel\":\"chromium\",\"headless\":true}"
+      }
+    },
+    "puppeteer": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-puppeteer@latest"
+      ],
+      "enabled": true,
+      "environment": {
+        "HEADLESS": "true",
+        "PUPPETEER_EXECUTABLE_PATH": "/usr/bin/chromium",
+        "PUPPETEER_ARGS": "[\"--no-sandbox\",\"--disable-setuid-sandbox\",\"--disable-gpu\"]"
+      }
+    }
+  }
+}
