@@ -1,7 +1,7 @@
 ---
 mode: primary
 description: "Used to analyze the codebase and write down in /notest/architecture/"
-model: openrouter/anthropic/claude-4-sonnet-20250522
+model: github-copilot/gpt-5
 temperature: 0.1
 tools:
   # read-only analysis; no edits/patches

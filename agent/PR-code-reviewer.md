@@ -1,7 +1,6 @@
 ---
-mode: primary
 description: "Read-only PR reviewer that inspects the diff and produces actionable comments."
-model: openrouter/anthropic/claude-4-sonnet-20250522
+model: github-copilot/gpt-5
 temperature: 0.1
 tools:
   # read-only analysis; no edits/patches
