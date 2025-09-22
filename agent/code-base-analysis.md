@@ -5,16 +5,20 @@ model: github-copilot/gpt-5
 temperature: 0.1
 tools:
   # read-only analysis; no edits/patches
-  write: false
-  edit: false
-  patch: false
+  write: true
+  edit: true
+  patch: true
   # enable reading + shell so it can run git and inspect files
   read: true
   grep: true
   glob: true
   bash: true
+permissions:
+  write: ask
+  edit: ask
+  patch: ask
+  bash: ask
 ---
-
 
 # Codebase analysis guidelines
 
@@ -303,7 +307,6 @@ This document outlines the potential epics and user stories that may have guided
 ### Epic: Core Chat Functionality
 
 - **Story: Send and Display Messages**
-
   - As a user, I want to send messages to the AI and see its responses in a chat interface.
   - As a user, I want to see a clear history of my chat messages.
   - As a user, I want to see who sent each message (user, AI, other).
@@ -337,7 +340,6 @@ This document outlines the potential epics and user stories that may have guided
 ### Epic: Language Learning Features (LLM-powered)
 
 - **Story: Word Definition**
-
   - As a user, I want to get definitions for words or phrases using a command (e.g., `/define`).
   - As a user, I want to see comprehensive definitions including short definitions, etymology, examples, and related words.
   - Main entry points:
@@ -352,7 +354,6 @@ This document outlines the potential epics and user stories that may have guided
       - `enhanceDefinition()` - adds etymology and examples
 
 - **Story: Translation Support**
-
   - As a developer, I want to provide multi-language support for the chat interface.
   - As a user, I want to translate messages between languages using commands.
   - Main entry points:

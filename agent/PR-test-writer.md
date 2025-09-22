@@ -60,7 +60,7 @@ BASE="${BASE:-$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | 
   * Detect `ts-jest`/`babel-jest` from devDependencies or Jest config
 * Determine test placement:
 
-  * If repo already uses `__tests__/` near changed files, use that
+  * If repo already uses `src/tests/` near changed files, use that
   * Else co-locate `*.test.ts(x)/js(x)` beside sources
 
 ## 3) Baseline tests
@@ -82,7 +82,7 @@ BASE="${BASE:-$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | 
 
   * This agent assumes **Jest**; if Vitest is detected, **stop** with a clear note
 * Use `ts-jest` or `babel-jest` if configured; **do not** alter config
-* Add minimal fixtures under `test/__fixtures__` when needed
+* Add minimal fixtures under `src/test/fixtures` when needed
 
 ## 6) Run tests with coverage (Cobertura + LCOV for changed-lines analysis)
 
