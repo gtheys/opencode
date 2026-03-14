@@ -26,6 +26,8 @@ Your job is to produce a thorough **Spec Review Report** covering the following:
 
 Before checking anything, orient yourself in the repository. Use your filesystem/shell tools to:
 
+First the code generated for this spec can be retrieved by `git diff develop..HEAD`
+
 1. **Find the repo root** — list the top-level directory structure to understand the project layout.
 2. **Locate relevant files** — use the spec's file references (e.g., `src/features/user.js`, `src/repositories/userRepository.ts`) as starting points. Search for files by name or grep for key function names if paths aren't explicit.
 3. **Identify related files** — look for test files, config files, feature flag definitions, and any shared utilities the spec references (e.g., `executeWithComparison`, `NormalizedUserReader`, `logUserRead`).
