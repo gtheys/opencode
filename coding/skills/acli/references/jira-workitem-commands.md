@@ -59,6 +59,55 @@ acli jira workitem create --from-json "workitem.json"
 acli jira workitem create --generate-json
 ```
 
+**Creating with ADF description (rich formatting):**
+```bash
+# Write ADF JSON to a temp file, then pass via --description-file
+cat > /tmp/desc.json << 'ENDJSON'
+{
+  "version": 1,
+  "type": "doc",
+  "content": [
+    {
+      "type": "heading",
+      "attrs": { "level": 3 },
+      "content": [{ "type": "text", "text": "Problem" }]
+    },
+    {
+      "type": "paragraph",
+      "content": [{ "type": "text", "text": "Login fails when password contains special characters." }]
+    },
+    {
+      "type": "heading",
+      "attrs": { "level": 3 },
+      "content": [{ "type": "text", "text": "Steps to Reproduce" }]
+    },
+    {
+      "type": "orderedList",
+      "content": [
+        { "type": "listItem", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Navigate to /login" }] }] },
+        { "type": "listItem", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Enter password with & or < characters" }] }] },
+        { "type": "listItem", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Click Submit" }] }] }
+      ]
+    },
+    {
+      "type": "panel",
+      "attrs": { "panelType": "error" },
+      "content": [
+        { "type": "paragraph", "content": [{ "type": "text", "text": "Results in 500 Internal Server Error" }] }
+      ]
+    }
+  ]
+}
+ENDJSON
+
+acli jira workitem create \
+  --summary "Login fails with special characters in password" \
+  --project "TEAM" --type "Bug" \
+  --description-file /tmp/desc.json
+
+rm -f /tmp/desc.json
+```
+
 ---
 
 ## workitem create-bulk
@@ -119,6 +168,42 @@ acli jira workitem edit --key "KEY-1,KEY-2" --summary "New Summary"
 acli jira workitem edit --jql "project = TEAM" --assignee "user@atlassian.com"
 acli jira workitem edit --filter 10001 --description "Updated description" --yes
 acli jira workitem edit --from-json "workitem.json"
+```
+
+**Editing with ADF description (rich formatting):**
+```bash
+# Update a work item's description with formatted content
+cat > /tmp/desc.json << 'ENDJSON'
+{
+  "version": 1,
+  "type": "doc",
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        { "type": "text", "text": "Status: " },
+        { "type": "status", "attrs": { "text": "Blocked", "color": "red", "localId": "", "style": "" } },
+        { "type": "text", "text": " — waiting on API team" }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": { "level": 3 },
+      "content": [{ "type": "text", "text": "Updated Requirements" }]
+    },
+    {
+      "type": "bulletList",
+      "content": [
+        { "type": "listItem", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Add rate limiting", "marks": [{ "type": "strong" }] }] }] },
+        { "type": "listItem", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Update error responses to RFC 7807 format" }] }] }
+      ]
+    }
+  ]
+}
+ENDJSON
+
+acli jira workitem edit --key "KEY-123" --description-file /tmp/desc.json
+rm -f /tmp/desc.json
 ```
 
 ---
@@ -361,6 +446,44 @@ acli jira workitem comment create --jql "project = TEAM" --body-file "comment.tx
 acli jira workitem comment create --key "KEY-1" --editor
 ```
 
+**Creating a rich ADF comment:**
+```bash
+# Comment with bold text, a link, and a code block
+cat > /tmp/comment.json << 'ENDJSON'
+{
+  "version": 1,
+  "type": "doc",
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        { "type": "text", "text": "Fix deployed", "marks": [{ "type": "strong" }] },
+        { "type": "text", "text": " — see PR " },
+        { "type": "text", "text": "#789", "marks": [{ "type": "link", "attrs": { "href": "https://github.com/org/repo/pull/789" } }] }
+      ]
+    },
+    {
+      "type": "codeBlock",
+      "attrs": { "language": "bash" },
+      "content": [
+        { "type": "text", "text": "$ curl -s https://api.example.com/health\n{\"status\": \"ok\"}" }
+      ]
+    },
+    {
+      "type": "panel",
+      "attrs": { "panelType": "success" },
+      "content": [
+        { "type": "paragraph", "content": [{ "type": "text", "text": "Verified in staging — ready for production deploy." }] }
+      ]
+    }
+  ]
+}
+ENDJSON
+
+acli jira workitem comment create --key "KEY-123" --body-file /tmp/comment.json
+rm -f /tmp/comment.json
+```
+
 ---
 
 ## workitem comment update
@@ -386,6 +509,39 @@ Examples:
 ```bash
 acli jira workitem comment update --key TEST-123 --id 10001 --body "Updated text"
 acli jira workitem comment update --key TEST-123 --id 10001 --body "Internal" --visibility-role "Administrators"
+```
+
+**Updating a comment with ADF (using `--body-adf`):**
+```bash
+# --body-adf explicitly accepts an ADF JSON file (comment update only)
+cat > /tmp/updated-comment.json << 'ENDJSON'
+{
+  "version": 1,
+  "type": "doc",
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        { "type": "text", "text": "Updated status: " },
+        { "type": "status", "attrs": { "text": "Done", "color": "green", "localId": "", "style": "" } }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        { "type": "text", "text": "All tests passing. Merged to " },
+        { "type": "text", "text": "main", "marks": [{ "type": "code" }] },
+        { "type": "text", "text": " at " },
+        { "type": "text", "text": "abc1234", "marks": [{ "type": "code" }] },
+        { "type": "text", "text": "." }
+      ]
+    }
+  ]
+}
+ENDJSON
+
+acli jira workitem comment update --key TEST-123 --id 10001 --body-adf /tmp/updated-comment.json
+rm -f /tmp/updated-comment.json
 ```
 
 ---

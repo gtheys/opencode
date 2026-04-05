@@ -123,6 +123,56 @@ acli jira workitem create --generate-json > template.json
 acli jira workitem create --from-json template.json
 ```
 
+### Atlassian Document Format (ADF)
+
+<!-- AIDEV-NOTE: ADF is required for rich text in Jira Cloud descriptions and comments. Plain text works for simple content, but headings, lists, tables, code blocks, mentions, and status lozenges all require ADF JSON. -->
+
+Jira Cloud uses ADF (a JSON format) for rich text fields. Plain text is fine for simple content, but use ADF when you need formatting like headings, lists, tables, code blocks, mentions, or status lozenges.
+
+**When to use ADF:**
+- Descriptions or comments needing structure (headings, lists, tables)
+- Content with inline formatting (bold, italic, links, colored text)
+- Status lozenges, @-mentions, emoji, or code blocks
+- Any content beyond simple plain text
+
+**How acli accepts ADF:**
+- `--description` / `--body` — pass ADF JSON string directly (awkward for complex content)
+- `--description-file` / `--body-file` — read ADF JSON from a file (recommended for rich content)
+- `--body-adf` — explicit ADF JSON file for comment updates only
+- `--from-json` — JSON templates can contain ADF in description fields
+
+**Recommended pattern — write ADF to a temp file:**
+```bash
+# 1. Build ADF JSON (manually or using helper functions)
+cat > /tmp/desc.json << 'ENDJSON'
+{
+  "version": 1,
+  "type": "doc",
+  "content": [
+    {
+      "type": "heading",
+      "attrs": { "level": 3 },
+      "content": [{ "type": "text", "text": "Summary" }]
+    },
+    {
+      "type": "paragraph",
+      "content": [{ "type": "text", "text": "Details of the issue." }]
+    }
+  ]
+}
+ENDJSON
+
+# 2. Pass to acli via --description-file or --body-file
+acli jira workitem create \
+  --summary "New task" --project "TEAM" --type "Task" \
+  --description-file /tmp/desc.json
+
+# 3. Clean up
+rm -f /tmp/desc.json
+```
+
+**Full ADF reference** with all node types, marks, and shell helper snippets: See [references/adf-reference.md](references/adf-reference.md)
+
 ## Quick Reference: Most Common Operations
 
 ### Work Items
