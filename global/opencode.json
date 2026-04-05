@@ -9,10 +9,30 @@
       },
       "models": {
         "qwen/qwen3.5-9b": {
-          "name": "Qwen 3.5 "
+          "name": "Qwen 3.5 9B"
+        },
+        "qwen/qwen3.5-35b-a3b": {
+          "name": "Qwen 3.5 35B"
+        },
+        "nemotron-3-nano-30b-a3b": {
+          "name": "Nemotron 3 Nano 30B"
+        },
+        "mythomax-l2-13b": {
+          "name": "MythoMax L2 13B"
+        },
+        "llama-2-7b-chat": {
+          "name": "Llama 2 7B Chat"
+        },
+        "zai-org/glm-4.7-flash": {
+          "name": "GLM 4.7 Flash"
         }
       }
     }
+  },
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "reserved": 10000
   },
   "agent": {
     "general": {
