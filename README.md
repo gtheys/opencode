@@ -23,6 +23,13 @@ Contains shared configuration that can be used across all use cases:
 - Tools
 - Plugins
 
+**Setup:**
+
+```bash
+# Create symlink to ~/.config/opencode
+ln -s /path/to/opencode/global ~/.config/opencode
+```
+
 ## Coding Workflow (`coding/`)
 
 Specialized configuration for development workflows with OpenCode. Uses [direnv](https://direnv.net/) to automatically load the environment when entering the directory.
