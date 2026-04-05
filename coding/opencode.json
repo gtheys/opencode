@@ -1,6 +1,92 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "lmstudio": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "LM Studio (local)",
+      "options": {
+        "baseURL": "http://127.0.0.1:1234/v1"
+      },
+      "models": {
+        "qwen/qwen3.5-9b": {
+          "name": "Qwen 3.5 9B"
+        },
+        "qwen/qwen3.5-35b-a3b": {
+          "name": "Qwen 3.5 35B"
+        },
+        "nemotron-3-nano-30b-a3b": {
+          "name": "Nemotron 3 Nano 30B"
+        },
+        "mythomax-l2-13b": {
+          "name": "MythoMax L2 13B"
+        },
+        "llama-2-7b-chat": {
+          "name": "Llama 2 7B Chat"
+        },
+        "zai-org/glm-4.7-flash": {
+          "name": "GLM 4.7 Flash"
+        }
+      }
+    }
+  },
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "reserved": 10000
+  },
   "agent": {
-    "general": { "model": "github-copilot/claude-haiku-4.5" }
+    "general": {
+      "model": "github-copilot/claude-haiku-4.5"
+    },
+    "summary": {
+      "model": "github-copilot/claude-haiku-4.5"
+    },
+    "title": {
+      "model": "github-copilot/claude-haiku-4.5"
+    },
+    "explore": {
+      "model": "github-copilot/claude-haiku-4.5"
+    }
+  },
+  "instructions": [
+    "CONTRIBUTING.md",
+    "instructions/INSTRUCTIONS.md",
+    "skills/tdd-workflow/SKILL.md",
+    "skills/security-review/SKILL.md",
+    "skills/coding-standards/SKILL.md"
+  ],
+  "permission": {
+    "doom_loop": "deny",
+    "mcp_*": "ask"
+  },
+  "mcp": {
+    "grafana": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "mcp-grafana"
+      ],
+      "environment": {
+        "GRAFANA_URL": "https://grafana.dev.salary-hero.com",
+        "GRAFANA_SERVICE_ACCOUNT_TOKEN": "${GRAFANA_SERVICE_ACCOUNT_TOKEN}",
+      },
+      "enabled": true
+    },
+    "firefox-devtools": {
+      "type": "local",
+      "command": [
+        "npx",
+        "firefox-devtools-mcp@latest"
+      ],
+      "enabled": true
+    },
+    "playwright": {
+      "type": "local",
+      "command": [
+        "npx",
+        "@playwright/mcp@latest"
+      ],
+      "enabled": true
+    }
   }
 }
