@@ -10,15 +10,15 @@ The user may ask for the actions below.
 
 ## Actions
 
-**If the user asks to Plan a feature** (or “plan”), do this:
+**If the user asks to Plan a feature** (or "plan"), do this:
 
-> Use step-by-step mode (“stepplan”) when the request is ambiguous, complex, uncertain, or the user expresses doubt. Otherwise use one-step mode (“quickplan”).
+> Use step-by-step mode ("stepplan") when the request is ambiguous, complex, uncertain, or the user expresses doubt. Otherwise use one-step mode ("quickplan").
 
-**If the user asks to Plan a feature in one step** (or “quickplan”), do this:
+**If the user asks to Plan a feature in one step** (or "quickplan"), do this:
 
 > Create the complete specification document in one go.
 
-**If the user asks to Plan a feature step-by-step** (or “stepplan”), do this:
+**If the user asks to Plan a feature step-by-step** (or "stepplan"), do this:
 
 **If you receive a Jira ticket ID**, do this:
 
@@ -57,7 +57,7 @@ In step-by-step mode, leave later sections as placeholders until prior sections 
 
 ### Title and metadata
 
-* YAML front matter with `createdAt:` (today’s date, ISO8601)
+* YAML front matter with `createdAt:` (today's date, ISO8601)
 * H1 title: concise, based on feature name
 
 ### Requirements
@@ -72,6 +72,10 @@ Define clear, testable requirements with:
   * **User story:** `AS A [role], I WANT [feature], SO THAT [benefit]`
   * **Acceptance criteria (EARS):** `WHEN [trigger], THEN [system] SHALL [action]`
 
+#### Test expectations per story
+
+Each implementation story **must** include its own unit and integration tests as acceptance criteria. Tests are not a separate story — they are part of the "definition of done" for each feature story. Only E2E tests are written as a standalone story at the end.
+
 **Example story format:**
 
 ```markdown
@@ -85,7 +89,44 @@ Define clear, testable requirements with:
 - **1.2. Propagate failures**
   - _WHEN_ token refresh fails,
   - _THEN_ the system _SHALL_ return a typed error with cause
+- **1.3. Unit & integration tests**
+  - _WHEN_ this story is implemented,
+  - _THEN_ the following tests _SHALL_ pass:
+    - Unit: refresh triggers on expired token, returns cached token when valid, surfaces typed error on failure
+    - Integration: full refresh flow against a mock auth server
 ```
+
+```markdown
+### 2. Token store
+
+**Story:** AS a backend service, I WANT an in-memory token store, SO THAT tokens are cached and reusable across requests.
+
+- **2.1. Store and retrieve**
+  - _WHEN_ a token pair is stored,
+  - _THEN_ the system _SHALL_ return it on subsequent `get()` calls
+- **2.2. Clear**
+  - _WHEN_ `clear()` is called,
+  - _THEN_ the system _SHALL_ remove all stored tokens
+- **2.3. Unit tests**
+  - _WHEN_ this story is implemented,
+  - _THEN_ the following tests _SHALL_ pass:
+    - Unit: returns null when empty, stores and retrieves token pair, clear() empties the store
+```
+
+```markdown
+### N. E2E tests (final story)
+
+**Story:** AS a developer, I WANT end-to-end tests covering the full token lifecycle, SO THAT I have confidence the integrated system works correctly.
+
+- **N.1. Happy path**
+  - _WHEN_ a full auth → refresh → retry flow is exercised,
+  - _THEN_ the test _SHALL_ verify tokens are obtained, refreshed, and used correctly
+- **N.2. Failure path**
+  - _WHEN_ the auth server is unreachable,
+  - _THEN_ the test _SHALL_ verify graceful degradation and correct error propagation
+```
+
+> **Rule:** Every implementation story includes a final acceptance criterion block (`Unit & integration tests`) listing the tests that must pass for the story to be complete. E2E tests are always the last story in the requirements, covering cross-cutting flows.
 
 **Example component format (CommonJS + TypeScript):**
 
@@ -110,26 +151,6 @@ export interface TokenStore {
 ```
 ````
 
-**Example testing strategy format (tests in `test/`):**
-
-````markdown
-**Running tests (Jest example):**
-
-- `npm test -- test/TokenStore.test.ts` — run a specific file
-- `npm test` — run the full suite
-
-**Test files to create/update:**
-
-```ts
-// test/TokenStore.test.ts
-describe("TokenStore", () => {
-  test("returns null when empty");
-  test("stores and retrieves token pair");
-  test("clear() empties the store");
-});
-```
-````
-
 ### Design
 
 Provide a practical technical plan for a **CommonJS + TypeScript** codebase:
@@ -140,7 +161,7 @@ Provide a practical technical plan for a **CommonJS + TypeScript** codebase:
 * **Data models:** Types/interfaces/schemas/data structures
 * **Runtime & modules:** Note CommonJS build (`"module": "commonjs"` in `tsconfig.json`), Node targets, interop (`esModuleInterop` if needed)
 * **Error handling:** Typed errors, wrapping, logging
-* **Testing strategy:** Unit/integration tests in `test/`. Show commands to run individual files
+* **Testing strategy:** Describe the overall test approach. List test files per component, showing which story they belong to. Unit and integration test files are tied to their implementation story; E2E test files are tied to the E2E story.
 
 **Example component format:**
 
@@ -166,14 +187,50 @@ export async function ensureFreshToken(
 
 **Example testing strategy format (Jest):**
 
+````markdown
+#### Testing strategy
+
+**Running tests:**
+
+- `npm test -- test/TokenStore.test.ts` — run a specific file
+- `npm test` — run the full suite
+
+**Test files by story:**
+
+| Story | Test file | Type |
+|---|---|---|
+| 1. Token refresh utility | `test/TokenRefresher.test.ts` | Unit |
+| 1. Token refresh utility | `test/TokenRefresher.integration.test.ts` | Integration |
+| 2. Token store | `test/TokenStore.test.ts` | Unit |
+| N. E2E tests | `test/e2e/tokenLifecycle.e2e.test.ts` | E2E |
+
 ```ts
-// test/TokenRefresher.test.ts
+// test/TokenRefresher.test.ts (Story 1)
 describe("ensureFreshToken", () => {
   test("refreshes when expired and updates store");
   test("returns existing token when still valid");
   test("bubbles up error when refresh fails");
 });
+
+// test/TokenRefresher.integration.test.ts (Story 1)
+describe("ensureFreshToken integration", () => {
+  test("full refresh flow against mock auth server");
+});
+
+// test/TokenStore.test.ts (Story 2)
+describe("TokenStore", () => {
+  test("returns null when empty");
+  test("stores and retrieves token pair");
+  test("clear() empties the store");
+});
+
+// test/e2e/tokenLifecycle.e2e.test.ts (Story N)
+describe("Token lifecycle E2E", () => {
+  test("happy path: auth → refresh → retry");
+  test("failure path: unreachable auth server");
+});
 ```
+````
 
 **Example component graph:**
 
@@ -205,9 +262,10 @@ The command will:
 The AI agent reads your spec and intelligently generates tasks by:
 
 * Identifying components from the Design section's "Files" and "Component graph"
-* Creating test tasks based on the "Testing strategy"
+* Creating test tasks **within each implementation story** (unit + integration tests are part of the component task, not separate)
+* Creating a **dedicated E2E test task** for the final E2E story
 * Determining dependencies from component relationships
-* Following TDD approach (tests before implementation)
+* Following TDD approach (write tests alongside implementation for each story)
 * Estimating effort based on task complexity
 
 **No manual task writing required** - just write a clear Requirements and Design section, and the AI will figure out the implementation tasks.

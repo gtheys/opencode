@@ -2,7 +2,6 @@
 description: Create Taskwarrior implementation tasks from an approved spec
 agent: create-tasks
 ---
-
 # Create implementation tasks from spec
 
 Analyze an approved specification and create granular Taskwarrior implementation tasks with proper dependencies based on the Requirements and Design sections.
@@ -16,7 +15,6 @@ Analyze an approved specification and create granular Taskwarrior implementation
 1. **Extract Jira ID from arguments**
    - The Jira ID is provided in $1 (e.g., "IN-1373")
    - Extract just the ID
-
 2. **Find the spec task in Taskwarrior**
     - Run: `task jiraid:$1 +spec export`
     - Parse JSON to extract:
@@ -25,7 +23,6 @@ Analyze an approved specification and create granular Taskwarrior implementation
       - `work_state` - Current approval state
     - Parse spec file path from annotation matching pattern: `Spec(repo=<repo>): <path>`
     - If no spec task found, exit with error: "No spec task found for <JIRAKEY>. Create one with: specjira <JIRAKEY>"
-
 3. **Validate spec is approved**
     - Check `work_state` field
     - If not "approved":
@@ -33,7 +30,6 @@ Analyze an approved specification and create granular Taskwarrior implementation
       - Ask: "Continue anyway? (yes/no)"
       - If no: Exit gracefully
     - If approved: Proceed to next step
-
 4. **Read and analyze the spec file**
    - Read the spec markdown file from the extracted path
    - If file not found, exit with error: "Spec file not found: <path>"
@@ -45,48 +41,60 @@ Analyze an approved specification and create granular Taskwarrior implementation
      - What needs to be built (from Requirements stories)
      - How it should be built (from Design components)
      - What files need to be created/modified (from Design files section)
-     - What tests are needed (from Design testing strategy)
-
+     - What tests are needed (from each story's test acceptance criteria and from the E2E story)
 5. **Generate implementation plan from spec analysis**
-
    Based on the Requirements and Design, create a task breakdown:
 
-   a. **Identify implementation phases** (typical phases):
+   a. **Understand the test structure in the spec:**
+      - Each implementation story includes its own unit and integration test acceptance criteria — these are **not** separate tasks but part of that story's implementation task
+      - The final story in Requirements is always an **E2E test story** — this becomes its own dedicated task/phase
+
+   b. **Identify implementation phases** (typical phases):
       - Preparation/Setup (if new infrastructure needed)
       - Data models/Types (if new models defined in Design)
-      - Core implementation (main feature components)
-      - Testing (unit/integration tests from testing strategy)
-      - Integration/Validation (if multiple components need integration)
+      - Core implementation (one task per story, including that story's unit + integration tests)
+      - E2E testing (from the final E2E story in Requirements)
 
-   b. **For each component/file in Design section**:
-      - Create task(s) to implement it
-      - If there's a testing strategy mentioned, create corresponding test tasks
-      - Use TDD approach: create test tasks before implementation tasks
+   c. **For each implementation story in Requirements**:
+      - Create a **single task** that covers: implementation + unit tests + integration tests for that story
+      - The story's test acceptance criteria (the "Unit & integration tests" block) become part of the task's acceptance criteria
+      - Do **not** create separate test tasks for unit/integration — they are bundled into the implementation task
+      - Use TDD approach within the task: the task description should instruct the implementer to write tests first, then implement
 
-   c. **Determine task dependencies**:
-      - Test tasks depend on setup/preparation tasks
-      - Implementation tasks depend on their corresponding test tasks (TDD)
-      - Integration tasks depend on component implementation tasks
-      - Follow logical ordering (data models → business logic → APIs → integration)
+   d. **For the E2E test story** (always the last story in Requirements):
+      - Create a **separate task or phase** dedicated to E2E tests
+      - This task depends on all core implementation tasks being complete
 
-   d. **Example task generation logic**:
+   e. **Determine task dependencies**:
+      - Setup/preparation tasks come first
+      - Data model tasks before implementation tasks that use them
+      - Implementation tasks follow logical ordering (data models → business logic → APIs)
+      - E2E test task depends on all implementation tasks
+      - Follow component graph from Design for inter-task dependencies
+
+   f. **Example task generation logic**:
 
       ```
-      If Design mentions:
-        - New file "src/token/TokenStore.ts" with interface TokenStore
+      If Requirements Story 1 says:
+        - "Token refresh utility" with acceptance criteria including
+          unit/integration tests for refresh logic
+      And Design mentions:
+        - New file "src/token/TokenRefresher.ts"
+        - Test file "test/TokenRefresher.test.ts"
+      Then create ONE task:
+        - Task: "Implement token refresh utility (Story 1)"
+          - Description includes: write tests first, then implement
+          - Acceptance: all story ACs pass including unit/integration tests
+          - Depends on: data model tasks
+
+      If Requirements final story says:
+        - "E2E tests" covering full token lifecycle
       Then create:
-        - Task: "Create TokenStore interface"
-        - Task: "Write tests for TokenStore" (depends on setup)
-        - Task: "Implement TokenStore" (depends on tests)
-      
-      If Design mentions:
-        - Testing strategy with Jest tests in test/
-      Then create:
-        - Task: "Set up test infrastructure" (if not exists)
-        - Task: "Write unit tests for <component>"
+        - Task: "E2E tests — token lifecycle (Story N)"
+          - Depends on: all implementation tasks
       ```
 
-   e. **Build task structure**:
+   g. **Build task structure**:
 
       ```
       phases: [
@@ -100,7 +108,8 @@ Analyze an approved specification and create granular Taskwarrior implementation
               acceptance: "<done-when>",
               estimated: "<time-estimate>",
               dependencies: [<other-task-ids>],
-              conditional: false
+              conditional: false,
+              story: "<story-number-from-spec>"
             }
           ]
         }
@@ -136,26 +145,25 @@ Analyze an approved specification and create granular Taskwarrior implementation
        - 1.1. Create TokenStore interface
        - 1.2. Create TokenPair type definition
      
-     2. Phase: Testing (TDD approach) (3 tasks)
-       - 2.1. Set up Jest test infrastructure (depends: none)
-       - 2.2. Write TokenStore tests (depends: 1.1, 2.1)
-       - 2.3. Write TokenRefresher tests (depends: 1.1, 2.1)
+     2. Phase: Core implementation (2 tasks, each includes unit + integration tests)
+       - 2.1. Implement token refresh utility — Story 1
+             (includes: unit tests for refresh/expiry/error, integration test against mock auth)
+             (depends: 1.1)
+       - 2.2. Implement token store — Story 2
+             (includes: unit tests for get/set/clear)
+             (depends: 1.1)
      
-     3. Phase: Core implementation (2 tasks)
-       - 3.1. Implement TokenStore (depends: 2.2)
-       - 3.2. Implement TokenRefresher (depends: 2.3)
+     3. Phase: E2E testing (1 task) — Story N
+       - 3.1. E2E tests — token lifecycle
+             (depends: 2.1, 2.2)
      
-     4. Phase: Integration (2 tasks)
-       - 4.1. Create usage example (depends: 3.1, 3.2)
-       - 4.2. Integration tests (depends: 4.1)
-     
-     Total: 4 phases, 9 implementation tasks
+     Total: 3 phases, 5 implementation tasks
      
      Based on:
-     - Requirements: 2 user stories
+     - Requirements: 2 implementation stories + 1 E2E story
      - Design components: TokenStore, TokenRefresher
      - Files to create: 4 new files, 0 modified
-     - Testing strategy: Jest with ts-jest
+     - Testing: unit/integration bundled per story, E2E separate
      ```
 
    - Ask: "Does this implementation plan look correct? (yes/no/edit)"
@@ -181,17 +189,37 @@ Analyze an approved specification and create granular Taskwarrior implementation
    - Build map: phase-number → { uuid: phase-uuid, slug: phase-slug }
 
 10. **Create implementation tasks**
-
     For each task in the generated plan:
 
     a. **Build task description**:
 
     ```
-    <task-title>
+    <task-title> (Story <N>)
     
     <detailed-description>
     
-    Acceptance: <acceptance-criteria>
+    Tests (TDD — write these first):
+    - Unit: <list from story's test acceptance criteria>
+    - Integration: <list from story's test acceptance criteria, if any>
+    
+    Acceptance: <all story acceptance criteria including tests>
+    
+    Estimated: <effort-estimate>
+    
+    Spec: <spec-file-path>
+    ```
+
+    For E2E tasks:
+
+    ```
+    <task-title> (Story <N> — E2E)
+    
+    <detailed-description>
+    
+    E2E tests to write:
+    - <list from E2E story acceptance criteria>
+    
+    Acceptance: <E2E story acceptance criteria>
     
     Estimated: <effort-estimate>
     
@@ -203,11 +231,13 @@ Analyze an approved specification and create granular Taskwarrior implementation
     - Add inter-task dependencies based on generated plan
       - Resolve task IDs to UUIDs from previously created tasks
       - Build comma-separated UUID list
+    - E2E task depends on **all** core implementation tasks
     - If circular dependency detected, warn and skip that dependency
 
     c. **Determine tags**:
     - Base tags: `+impl`
     - If task is conditional (optional based on analysis): add `+conditional`
+    - E2E tasks: add `+e2e`
 
     d. **Create task**:
 
@@ -217,7 +247,7 @@ Analyze an approved specification and create granular Taskwarrior implementation
         jiraid:<JIRAKEY> \
         repository:<repo> \
         work_state:todo \
-        +impl [+conditional] \
+        +impl [+conditional] [+e2e] \
         depends:<phase-uuid>[,<dependency-task-uuids>]
       ```
 
@@ -251,9 +281,8 @@ Analyze an approved specification and create granular Taskwarrior implementation
     Tasks by phase:
       📁 <JIRAKEY> (root)
         📁 1. Phase: Data models & types (2 tasks) → <JIRAKEY>.data-models
-        📁 2. Phase: Testing (3 tasks) → <JIRAKEY>.testing
-        📁 3. Phase: Core implementation (2 tasks) → <JIRAKEY>.core-implementation
-        📁 4. Phase: Integration (2 tasks) → <JIRAKEY>.integration
+        📁 2. Phase: Core implementation (2 tasks, tests bundled) → <JIRAKEY>.core-implementation
+        📁 3. Phase: E2E testing (1 task) → <JIRAKEY>.e2e-testing
     
     Conditional tasks: <count> (tagged with +conditional)
     
@@ -261,20 +290,22 @@ Analyze an approved specification and create granular Taskwarrior implementation
     - View hierarchy: task project:<JIRAKEY> tree
     - View all tasks: task project:<JIRAKEY> list
     - View ready tasks: task project:<JIRAKEY> +READY list
-    - View specific phase: task project:<JIRAKEY>.testing list
+    - View specific phase: task project:<JIRAKEY>.core-implementation list
+    - View E2E tasks: task +e2e jiraid:<JIRAKEY> list
     - View by repo: task repository:<repo> list
     ```
 
 ## Notes
 
 - **AI-Generated**: Tasks are generated by analyzing the spec, not parsed from pre-written tasks
-- **Intelligent analysis**: AI reads Requirements and Design to determine what needs to be built
-- **TDD approach**: Test tasks are created before implementation tasks where applicable
-- **Dependencies**: Logical dependency chains based on component relationships
+- **Tests bundled per story**: Unit and integration tests are part of each implementation task, not separate tasks. Each story in the spec includes its own test acceptance criteria, and the task inherits those.
+- **E2E tests are separate**: The final story in Requirements is always an E2E story and gets its own dedicated task(s) tagged `+e2e`
+- **TDD within tasks**: Each implementation task description instructs the implementer to write tests first, then implement — but it's a single task, not two
+- **Dependencies**: Logical dependency chains based on component relationships. E2E tasks depend on all implementation tasks.
 - **Jira linking**: The `jiraid:<JIRAKEY>` UDA links all tasks to the original Jira ticket (NOT via `depends:`)
 - **Repository**: The `repository:<repo>` UDA stores the git repo name for filtering across projects
 - **Work state**: Always set to `todo` for all created tasks (both phases and implementations)
-- **Tags**: `+impl` for all implementation tasks, `+phase` for phase grouping tasks, `+conditional` for optional tasks
+- **Tags**: `+impl` for all implementation tasks, `+phase` for phase grouping tasks, `+e2e` for E2E test tasks, `+conditional` for optional tasks
 - **Hierarchical project structure**:
   - Phase tasks use `project:<JIRAKEY>` (root level)
   - Implementation tasks use `project:<JIRAKEY>.<phase-slug>` (nested under phase)
@@ -288,29 +319,28 @@ When analyzing the spec to generate tasks, follow these principles:
 
 ### From Requirements Section
 
-- **User stories** → Identify what features need implementation
-- **Acceptance criteria** → Use to generate task acceptance criteria
+- **Implementation stories** → Each becomes one task that includes implementation + unit/integration tests
+- **Test acceptance criteria within stories** → Folded into the task's acceptance criteria and description
+- **E2E story (always last)** → Becomes a separate task/phase
 - **Out of scope** → Don't create tasks for explicitly excluded items
 
 ### From Design Section
 
-- **Files (New)** → Create task to create the file
-- **Files (Changed)** → Create task to modify the file
+- **Files (New)** → Map to the story task that owns that file
+- **Files (Changed)** → Map to the story task that owns that change
 - **Files (Removed)** → Create task to remove the file
 - **Component graph** → Use to determine task dependencies
-- **Data models** → Create tasks for defining types/interfaces/models
-- **Testing strategy** → Create test tasks based on what's described
-- **Error handling** → Create tasks for implementing error handling
+- **Data models** → Create tasks for defining types/interfaces/models (these may precede story tasks)
+- **Testing strategy table** → Use the "Test files by story" table to confirm which tests belong to which story task and which belong to the E2E task
+- **Error handling** → Fold into the relevant story's implementation task
 - **Runtime & modules** → Create setup/configuration tasks if needed
 
 ### Task Ordering
 
 1. **Setup/Preparation** - Configuration, dependencies, infrastructure
 2. **Types/Models** - Data structures and interfaces
-3. **Tests (TDD)** - Write tests first
-4. **Implementation** - Implement to make tests pass
-5. **Integration** - Connect components together
-6. **Validation** - End-to-end testing, manual verification
+3. **Core implementation** - One task per story (tests + implementation bundled, TDD within each)
+4. **E2E testing** - End-to-end tests from the final story (depends on all core tasks)
 
 ## Example Analysis
 
@@ -329,39 +359,70 @@ SO THAT upstream calls remain authenticated.
 - **1.1. Refresh on expiry**
   - WHEN a request is made and the token is expired,
   - THEN the system SHALL fetch a new token and retry once
+- **1.2. Propagate failures**
+  - WHEN token refresh fails,
+  - THEN the system SHALL return a typed error with cause
+- **1.3. Unit & integration tests**
+  - WHEN this story is implemented,
+  - THEN the following tests SHALL pass:
+    - Unit: refresh triggers on expired token, returns cached when valid, typed error on failure
+    - Integration: full refresh flow against mock auth server
+
+### 2. Token store
+
+**Story:** AS a backend service, I WANT an in-memory token store, SO THAT tokens are cached.
+
+- **2.1. Store and retrieve**
+  - WHEN a token pair is stored,
+  - THEN the system SHALL return it on subsequent get() calls
+- **2.2. Unit tests**
+  - WHEN this story is implemented,
+  - THEN the following tests SHALL pass:
+    - Unit: returns null when empty, stores and retrieves, clear() empties store
+
+### 3. E2E tests
+
+**Story:** AS a developer, I WANT end-to-end tests covering the full token lifecycle.
+
+- **3.1. Happy path** — full auth → refresh → retry flow
+- **3.2. Failure path** — unreachable auth server, graceful degradation
 
 ## Design
 
 ### Files
-
 #### New
 - `src/token/TokenStore.ts` - In-memory token storage
 - `src/token/TokenRefresher.ts` - Token refresh logic
-- `test/TokenStore.test.ts` - TokenStore tests
-- `test/TokenRefresher.test.ts` - TokenRefresher tests
 
 ### Testing strategy
 
-Use Jest with ts-jest. Run: `npm test`
+| Story | Test file | Type |
+|---|---|---|
+| 1. Token refresh utility | `test/TokenRefresher.test.ts` | Unit |
+| 1. Token refresh utility | `test/TokenRefresher.integration.test.ts` | Integration |
+| 2. Token store | `test/TokenStore.test.ts` | Unit |
+| 3. E2E tests | `test/e2e/tokenLifecycle.e2e.test.ts` | E2E |
 ```
 
-**Generated tasks (with hierarchical projects):**
+**Generated tasks:**
 
 ```
 Project: IN-1373 (root - contains phase tasks)
-├── 1. Phase: Setup (project: IN-1373)
-│     └── 1.1. Verify Jest and ts-jest are configured (project: IN-1373.setup)
-
-├── 2. Phase: Data models (project: IN-1373)
-│     └── 2.1. Create TokenStore and TokenPair interfaces (project: IN-1373.data-models)
-
-├── 3. Phase: Testing (project: IN-1373)
-│     ├── 3.1. Write TokenStore tests (project: IN-1373.testing)
-│     └── 3.2. Write TokenRefresher tests (project: IN-1373.testing)
-
-└── 4. Phase: Implementation (project: IN-1373)
-      ├── 4.1. Implement TokenStore (project: IN-1373.implementation)
-      └── 4.2. Implement TokenRefresher (project: IN-1373.implementation)
+├── 1. Phase: Data models (project: IN-1373)
+│     └── 1.1. Create TokenStore and TokenPair interfaces (project: IN-1373.data-models)
+│
+├── 2. Phase: Core implementation (project: IN-1373)
+│     ├── 2.1. Implement token refresh utility — Story 1 (project: IN-1373.core-implementation)
+│     │        Tests (TDD): test/TokenRefresher.test.ts, test/TokenRefresher.integration.test.ts
+│     │        Depends: 1.1
+│     └── 2.2. Implement token store — Story 2 (project: IN-1373.core-implementation)
+│              Tests (TDD): test/TokenStore.test.ts
+│              Depends: 1.1
+│
+└── 3. Phase: E2E testing (project: IN-1373)
+      └── 3.1. E2E tests — token lifecycle — Story 3 (project: IN-1373.e2e-testing) +e2e
+               Tests: test/e2e/tokenLifecycle.e2e.test.ts
+               Depends: 2.1, 2.2
 
 View with: task project:IN-1373 tree
 ```
