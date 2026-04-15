@@ -68,9 +68,9 @@
       ],
       "environment": {
         "GRAFANA_URL": "https://grafana.dev.salary-hero.com",
-        "GRAFANA_SERVICE_ACCOUNT_TOKEN": "${GRAFANA_SERVICE_ACCOUNT_TOKEN}",
+        "GRAFANA_SERVICE_ACCOUNT_TOKEN": "${GRAFANA_SERVICE_ACCOUNT_TOKEN}"
       },
-      "enabled": true
+      "enabled": false
     },
     "firefox-devtools": {
       "type": "local",
@@ -78,7 +78,7 @@
         "npx",
         "firefox-devtools-mcp@latest"
       ],
-      "enabled": true
+      "enabled": false
     },
     "playwright": {
       "type": "local",
@@ -86,6 +86,21 @@
         "npx",
         "@playwright/mcp@latest"
       ],
+      "enabled": false
+    },
+    "honcho": {
+      "type": "local",
+      "command": [
+        "bun",
+        "run",
+        "/home/geert/honcho/mcp/src/local.ts"
+      ],
+      "environment": {
+        "HONCHO_API_URL": "http://localhost:8000/v3",
+        "HONCHO_API_KEY": "local-dev-key",
+        "HONCHO_USER_NAME": "geert",
+        "HONCHO_WORKSPACE_ID": "default"
+      },
       "enabled": true
     }
   }
