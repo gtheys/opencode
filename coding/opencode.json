@@ -58,35 +58,5 @@
   "permission": {
     "doom_loop": "deny",
     "mcp_*": "ask"
-  },
-  "mcp": {
-    "grafana": {
-      "type": "local",
-      "command": [
-        "uvx",
-        "mcp-grafana"
-      ],
-      "environment": {
-        "GRAFANA_URL": "https://grafana.dev.salary-hero.com",
-        "GRAFANA_SERVICE_ACCOUNT_TOKEN": "${GRAFANA_SERVICE_ACCOUNT_TOKEN}",
-      },
-      "enabled": true
-    },
-    "firefox-devtools": {
-      "type": "local",
-      "command": [
-        "npx",
-        "firefox-devtools-mcp@latest"
-      ],
-      "enabled": true
-    },
-    "playwright": {
-      "type": "local",
-      "command": [
-        "npx",
-        "@playwright/mcp@latest"
-      ],
-      "enabled": true
-    }
   }
 }
