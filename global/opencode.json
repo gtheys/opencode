@@ -102,6 +102,17 @@
         "HONCHO_WORKSPACE_ID": "default"
       },
       "enabled": true
+    },
+    "ms365": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@softeria/ms-365-mcp-server",
+        "--org-mode",
+        "--enabled-tools",
+        "list-mail|send-mail|list-calendar|get-calendar-events|create-calendar-event|update-calendar-event|delete-calendar-event|get-calendar-view"
+      ]
     }
   }
 }
