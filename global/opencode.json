@@ -112,7 +112,7 @@
         "@softeria/ms-365-mcp-server",
         "--org-mode",
         "--enabled-tools",
-        "list-mail|send-mail|list-calendar|get-calendar-events|create-calendar-event|update-calendar-event|delete-calendar-event|get-calendar-view"
+        "list-mail|send-mail|list-calendar|get-calendar-events|create-calendar-event|update-calendar-event|delete-calendar-event|get-calendar-view|list-joined-teams|list-team-channels|send-channel-message|list-chats|get-chat|send-chat-message"
       ],
       "enabled": false
     },
