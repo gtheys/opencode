@@ -1,283 +1,185 @@
 // honcho-sync.ts
-// OpenCode plugin — post-turn sync + compaction hook for Honcho
-// Works alongside your existing Honcho MCP (does NOT duplicate tools)
+// OpenCode plugin — sync messages to Honcho + inject user profile on compaction
 //
-// Drop into: ~/.config/opencode/plugins/honcho-sync.ts
+// Uses @honcho-ai/sdk for Honcho API calls.
 //
-// What this does:
-//   1. After every agent response, captures user+assistant messages
-//   2. Every CADENCE turns, flushes them to Honcho via REST API
-//   3. On compaction, injects user profile so memory survives context resets
-//   4. On session idle, flushes any remaining buffered messages
+// AIDEV-NOTE: Architecture informed by types.gen.ts and deepwiki 2.9 / 5.1:
 //
-// Requires your Honcho instance running at localhost:8000
+// Event flow:
+//   message.part.updated  → properties.part: Part (TextPart has type="text", text=string,
+//                           messageID, sessionID). Fires repeatedly during streaming.
+//                           part.text = FULL accumulated text so far (not just delta).
+//   message.updated       → properties.info: Message (has id, role, sessionID).
+//                           Fires once when message is complete.
+//
+// Strategy:
+//   1. On message.part.updated where part.type==="text": overwrite partTexts[messageID]
+//      with the latest (most complete) part.text.
+//   2. On message.updated: pull accumulated text for that messageID, add to pending queue.
+//   3. After each assistant message.updated: flush pending queue to Honcho.
+//
+// session.idle never fires; session.status only emits {"type":"busy"}.
 
 import type { Plugin } from "@opencode-ai/plugin";
+import { Honcho } from "@honcho-ai/sdk";
 
 const env = (key: string, fallback: string) =>
   (globalThis as any).Bun?.env?.[key] ?? (globalThis as any).process?.env?.[key] ?? fallback;
 
 // ── Config ──────────────────────────────────────────────────────
-const API = env("HONCHO_API_URL", "http://localhost:8000/v3");
-const API_KEY = env("HONCHO_API_KEY", "local-dev-key");
-const WORKSPACE = env("HONCHO_WORKSPACE_ID", "default");
-const USER_PEER = env("HONCHO_USER_NAME", env("USER", "user"));
+const API_URL    = env("HONCHO_API_URL",        "http://localhost:8000");
+const API_KEY    = env("HONCHO_API_KEY",        "local-dev-key");
+const WORKSPACE  = env("HONCHO_WORKSPACE_ID",   "default");
+const USER_PEER  = env("HONCHO_USER_NAME",      env("USER", "user"));
 const AGENT_PEER = env("HONCHO_ASSISTANT_NAME", "opencode");
-const CADENCE = parseInt(env("HONCHO_SYNC_CADENCE", "3"), 10); // flush every N turns
-
-// ── Honcho REST helper ──────────────────────────────────────────
-async function honcho(path: string, options: RequestInit = {}): Promise<any> {
-  const resp = await fetch(`${API}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`,
-      ...(options.headers as Record<string, string> || {}),
-    },
-  });
-  if (!resp.ok) return null;
-  const text = await resp.text();
-  try { return JSON.parse(text); } catch { return text; }
-}
-
-// ── Peer + session management ───────────────────────────────────
-let userPeerId: string | null = null;
-let agentPeerId: string | null = null;
-
-async function ensurePeers() {
-  if (userPeerId && agentPeerId) return;
-  try {
-    const user = await honcho(`/workspaces/${WORKSPACE}/peers`, {
-      method: "POST",
-      body: JSON.stringify({ name: USER_PEER }),
-    });
-    // If peer already exists, the API may return it or error — try get
-    if (user?.id) {
-      userPeerId = user.id;
-    } else {
-      const existing = await honcho(`/workspaces/${WORKSPACE}/peers?name=${USER_PEER}`);
-      if (existing?.items?.[0]?.id) userPeerId = existing.items[0].id;
-    }
-
-    const agent = await honcho(`/workspaces/${WORKSPACE}/peers`, {
-      method: "POST",
-      body: JSON.stringify({
-        name: AGENT_PEER,
-        configuration: { observe_me: false },
-      }),
-    });
-    if (agent?.id) {
-      agentPeerId = agent.id;
-    } else {
-      const existing = await honcho(`/workspaces/${WORKSPACE}/peers?name=${AGENT_PEER}`);
-      if (existing?.items?.[0]?.id) agentPeerId = existing.items[0].id;
-    }
-  } catch (e) {
-    // Non-fatal — sync will retry next cadence
-  }
-}
-
-// Per-OpenCode-session state
-interface SyncState {
-  honchoSessionId: string | null;
-  buffer: Array<{ peer_id: string; content: string }>;
-  turnCount: number;
-}
-
-const sessions = new Map<string, SyncState>();
-
-function getState(id: string): SyncState {
-  let s = sessions.get(id);
-  if (!s) {
-    s = { honchoSessionId: null, buffer: [], turnCount: 0 };
-    sessions.set(id, s);
-  }
-  return s;
-}
-
-async function ensureHonchoSession(state: SyncState, opencodeSessionId: string): Promise<string | null> {
-  if (state.honchoSessionId) return state.honchoSessionId;
-  await ensurePeers();
-  if (!userPeerId) return null;
-
-  // AIDEV-NOTE: Honcho v3 session creation requires { id: "..." } in the body.
-  // We reuse the OpenCode session ID so the Honcho session is traceable.
-  // The API returns 422 if id is omitted (silent failure in earlier version).
-  const honchoId = `opencode-${opencodeSessionId}`;
-
-  try {
-    const session = await honcho(`/workspaces/${WORKSPACE}/sessions`, {
-      method: "POST",
-      body: JSON.stringify({ id: honchoId }),
-    });
-    if (session?.id) {
-      state.honchoSessionId = session.id;
-
-      // AIDEV-NOTE: Peers are set via PUT (replaces the full set), not POST.
-      // Body is a dict keyed by peer_id: { observe_me, observe_others }.
-      const peersBody: Record<string, { observe_me: boolean; observe_others: boolean }> = {
-        [userPeerId]: { observe_me: true, observe_others: true },
-      };
-      if (agentPeerId) {
-        peersBody[agentPeerId] = { observe_me: false, observe_others: true };
-      }
-      await honcho(
-        `/workspaces/${WORKSPACE}/sessions/${session.id}/peers`,
-        {
-          method: "PUT",
-          body: JSON.stringify(peersBody),
-        }
-      );
-    }
-    return state.honchoSessionId;
-  } catch {
-    return null;
-  }
-}
-
-async function flushBuffer(state: SyncState, opencodeSessionId: string) {
-  if (state.buffer.length === 0) return;
-  const sessionId = await ensureHonchoSession(state, opencodeSessionId);
-  if (!sessionId) return;
-
-  try {
-    // AIDEV-NOTE: Honcho v3 messages endpoint requires { messages: [...] } wrapper.
-    // Batch all buffered messages in a single request for efficiency.
-    await honcho(
-      `/workspaces/${WORKSPACE}/sessions/${sessionId}/messages`,
-      {
-        method: "POST",
-        body: JSON.stringify({ messages: state.buffer }),
-      }
-    );
-    state.buffer = [];
-  } catch {
-    // Keep buffer — will retry on next flush
-  }
-}
-
-async function getUserProfile(): Promise<string | null> {
-  await ensurePeers();
-  if (!userPeerId) return null;
-  try {
-    const rep = await honcho(
-      `/workspaces/${WORKSPACE}/peers/${userPeerId}/representation`
-    );
-    return rep?.content || null;
-  } catch {
-    return null;
-  }
-}
 
 // ── Plugin ──────────────────────────────────────────────────────
-
 export const HonchoSync: Plugin = async ({ client }) => {
-  // Verify Honcho is reachable
-  try {
-    const health = await fetch(`${API.replace("/v3", "")}/health`);
-    if (health.ok) {
-      await client.app.log({
-        body: {
-          service: "honcho-sync",
-          level: "info",
-          message: `Connected to Honcho at ${API} — sync cadence: every ${CADENCE} turns`,
-        },
-      });
+  const log = (message: string) =>
+    client.app.log({ body: { service: "honcho-sync", level: "info", message } });
+
+  const honcho = new Honcho({ apiKey: API_KEY, workspaceId: WORKSPACE, baseURL: API_URL });
+
+  // Cache Honcho session IDs to avoid repeated get-or-create calls
+  // Map: opencodeSessionId → honchoSessionId
+  const honchoSessionIds = new Map<string, string>();
+
+  // In-flight text accumulator: messageID → latest full text
+  // Each message.part.updated overwrites with the latest accumulated text.
+  const partTexts = new Map<string, string>();
+
+  // Pending messages per session waiting to be synced
+  const pending = new Map<string, Array<{ role: "user" | "assistant"; content: string }>>();
+
+  // ── Honcho session setup ─────────────────────────────────────
+  async function ensureHonchoSession(opencodeSessionId: string): Promise<string | null> {
+    const cached = honchoSessionIds.get(opencodeSessionId);
+    if (cached) return cached;
+
+    try {
+      const userPeer  = await honcho.peer(USER_PEER);
+      const agentPeer = await honcho.peer(AGENT_PEER, { configuration: { observeMe: false } });
+      const session   = await honcho.session(`opencode-${opencodeSessionId}`);
+
+      // Add peers with individual calls to stay within the SDK's accepted types
+      await session.addPeers(userPeer);
+      await session.addPeers(agentPeer);
+
+      honchoSessionIds.set(opencodeSessionId, session.id);
+      return session.id;
+    } catch (e: any) {
+      await log(`ERROR creating Honcho session: ${e?.message ?? e}`);
+      return null;
     }
-  } catch {
-    await client.app.log({
-      body: {
-        service: "honcho-sync",
-        level: "warn",
-        message: `Cannot reach Honcho at ${API} — sync disabled until available`,
-      },
-    });
+  }
+
+  // ── Flush pending messages to Honcho ─────────────────────────
+  async function flush(opencodeSessionId: string) {
+    const messages = pending.get(opencodeSessionId);
+    if (!messages?.length) return;
+
+    const honchoSessionId = await ensureHonchoSession(opencodeSessionId);
+    if (!honchoSessionId) return;
+
+    try {
+      const userPeer  = await honcho.peer(USER_PEER);
+      const agentPeer = await honcho.peer(AGENT_PEER, { configuration: { observeMe: false } });
+      const session   = await honcho.session(honchoSessionId);
+
+      const sdkMessages = messages.map(({ role, content }) =>
+        (role === "user" ? userPeer : agentPeer).message(content)
+      );
+
+      await session.addMessages(sdkMessages);
+      pending.set(opencodeSessionId, []);
+      await log(`synced ${sdkMessages.length} messages → ${honchoSessionId}`);
+    } catch (e: any) {
+      await log(`ERROR flushing to Honcho: ${e?.message ?? e}`);
+    }
+  }
+
+  // ── Startup health check ─────────────────────────────────────
+  try {
+    await honcho.peer(USER_PEER);
+    await log(`Connected to Honcho at ${API_URL} (user: ${USER_PEER})`);
+  } catch (e: any) {
+    await log(`Cannot reach Honcho at ${API_URL}: ${e?.message ?? e}`);
   }
 
   return {
-    // ── Message capture ───────────────────────────────────────
     event: async ({ event }) => {
       try {
-        const sid =
-          (event as any).properties?.sessionID ||
-          (event as any).properties?.id ||
-          (event as any).session_id;
+        const props = (event as any).properties;
 
-        if (!sid) return;
-        const state = getState(sid);
+        // ── 1. Accumulate text from streaming parts ──────────
+        if (event.type === "message.part.updated") {
+          const part = props?.part;
+          // Only capture TextParts with actual content
+          if (
+            part?.type === "text" &&
+            typeof part.text === "string" &&
+            part.text.length > 0 &&
+            !part.synthetic &&
+            !part.ignored
+          ) {
+            partTexts.set(part.messageID as string, part.text as string);
+          }
+          return;
+        }
 
-        // Capture messages after each update
+        // ── 2. Finalise message and enqueue for sync ─────────
         if (event.type === "message.updated") {
-          const msg = (event as any).properties;
-          if (!msg?.role || !msg?.content) return;
+          const info = props?.info;
+          if (!info?.id || !info?.sessionID) return;
+          if (info.role !== "user" && info.role !== "assistant") return;
 
-          // Skip tool calls and system messages
-          if (msg.role !== "user" && msg.role !== "assistant") return;
+          // Get the accumulated text for this message
+          const text = partTexts.get(info.id as string) ?? "";
+          partTexts.delete(info.id as string);
 
-          await ensurePeers();
-          const peerId = msg.role === "user" ? userPeerId : agentPeerId;
-          if (!peerId) return;
+          // Skip short/empty messages (tool calls, summaries, etc.)
+          const content = text.trim();
+          if (content.length < 5) return;
 
-          // Extract text content
-          let content = "";
-          if (typeof msg.content === "string") {
-            content = msg.content;
-          } else if (Array.isArray(msg.content)) {
-            content = msg.content
-              .filter((p: any) => p.type === "text")
-              .map((p: any) => p.text)
-              .join("\n");
+          const sid = info.sessionID as string;
+          const queue = pending.get(sid) ?? [];
+          queue.push({
+            role: info.role as "user" | "assistant",
+            content: content.length > 4000 ? content.slice(0, 4000) + "\n[truncated]" : content,
+          });
+          pending.set(sid, queue);
+
+          // Flush after each completed assistant turn
+          if (info.role === "assistant") {
+            await flush(sid);
           }
-
-          if (!content || content.length < 5) return;
-
-          // Truncate very long messages (tool output, code blocks)
-          if (content.length > 4000) {
-            content = content.slice(0, 4000) + "\n[truncated]";
-          }
-
-          state.buffer.push({ peer_id: peerId, content });
-
-          // Count assistant turns for cadence gating
-          if (msg.role === "assistant") {
-            state.turnCount++;
-
-            // Flush at cadence
-            if (state.turnCount % CADENCE === 0) {
-              await flushBuffer(state, sid);
-            }
-          }
+          return;
         }
 
-        // Flush remaining buffer when session goes idle
-        if (event.type === "session.idle") {
-          await flushBuffer(state, sid);
-        }
-
-        // Clean up
+        // ── 3. Clean up on session delete ────────────────────
         if (event.type === "session.deleted") {
-          const state = sessions.get(sid);
-          if (state) {
-            await flushBuffer(state, sid); // flush before delete
-            sessions.delete(sid);
+          const sid = props?.info?.id ?? props?.sessionID;
+          if (sid) {
+            await flush(sid as string);
+            pending.delete(sid as string);
+            honchoSessionIds.delete(sid as string);
           }
         }
-      } catch (e) {
-        // Never break the session — memory is best-effort
+      } catch (e: any) {
+        await log(`ERROR: ${e?.message ?? e}`);
       }
     },
 
-    // ── Compaction: inject user profile ────────────────────────
+    // ── Compaction: inject user profile into context ─────────
     "experimental.session.compacting": async (_input, output) => {
       try {
-        const profile = await getUserProfile();
+        const userPeer = await honcho.peer(USER_PEER);
+        const profile  = await userPeer.getRepresentation();
         if (profile) {
-          output.context.push(`<honcho_user_profile>
-${profile}
-</honcho_user_profile>`);
+          output.context.push(`<honcho_user_profile>\n${profile}\n</honcho_user_profile>`);
         }
       } catch {
-        // Silently degrade
+        // Silently degrade — compaction still works without the profile
       }
     },
   };
