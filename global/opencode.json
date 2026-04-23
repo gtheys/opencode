@@ -113,7 +113,17 @@
         "--org-mode",
         "--enabled-tools",
         "list-mail|send-mail|list-calendar|get-calendar-events|create-calendar-event|update-calendar-event|delete-calendar-event|get-calendar-view"
-      ]
+      ],
+      "enabled": false
+    },
+    "minutes-mcp": {
+      "type": "local",
+      "command": [
+        "bun",
+        "run",
+        "/home/geert/Code/personal/minutes/crates/mcp/src/index.ts"
+      ],
+      "enabled": false
     }
   }
 }
