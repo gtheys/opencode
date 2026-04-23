@@ -95,46 +95,39 @@ function getState(id: string): SyncState {
   return s;
 }
 
-async function ensureHonchoSession(state: SyncState): Promise<string | null> {
+async function ensureHonchoSession(state: SyncState, opencodeSessionId: string): Promise<string | null> {
   if (state.honchoSessionId) return state.honchoSessionId;
   await ensurePeers();
   if (!userPeerId) return null;
 
+  // AIDEV-NOTE: Honcho v3 session creation requires { id: "..." } in the body.
+  // We reuse the OpenCode session ID so the Honcho session is traceable.
+  // The API returns 422 if id is omitted (silent failure in earlier version).
+  const honchoId = `opencode-${opencodeSessionId}`;
+
   try {
     const session = await honcho(`/workspaces/${WORKSPACE}/sessions`, {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify({ id: honchoId }),
     });
     if (session?.id) {
       state.honchoSessionId = session.id;
 
-      // Add both peers to the session
-      if (userPeerId) {
-        await honcho(
-          `/workspaces/${WORKSPACE}/sessions/${session.id}/peers`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              peer_id: userPeerId,
-              observe_me: true,
-              observe_others: true,
-            }),
-          }
-        );
-      }
+      // AIDEV-NOTE: Peers are set via PUT (replaces the full set), not POST.
+      // Body is a dict keyed by peer_id: { observe_me, observe_others }.
+      const peersBody: Record<string, { observe_me: boolean; observe_others: boolean }> = {
+        [userPeerId]: { observe_me: true, observe_others: true },
+      };
       if (agentPeerId) {
-        await honcho(
-          `/workspaces/${WORKSPACE}/sessions/${session.id}/peers`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              peer_id: agentPeerId,
-              observe_me: false,
-              observe_others: true,
-            }),
-          }
-        );
+        peersBody[agentPeerId] = { observe_me: false, observe_others: true };
       }
+      await honcho(
+        `/workspaces/${WORKSPACE}/sessions/${session.id}/peers`,
+        {
+          method: "PUT",
+          body: JSON.stringify(peersBody),
+        }
+      );
     }
     return state.honchoSessionId;
   } catch {
@@ -142,25 +135,21 @@ async function ensureHonchoSession(state: SyncState): Promise<string | null> {
   }
 }
 
-async function flushBuffer(state: SyncState) {
+async function flushBuffer(state: SyncState, opencodeSessionId: string) {
   if (state.buffer.length === 0) return;
-  const sessionId = await ensureHonchoSession(state);
+  const sessionId = await ensureHonchoSession(state, opencodeSessionId);
   if (!sessionId) return;
 
   try {
-    // Send buffered messages to Honcho
-    for (const msg of state.buffer) {
-      await honcho(
-        `/workspaces/${WORKSPACE}/sessions/${sessionId}/messages`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            peer_id: msg.peer_id,
-            content: msg.content,
-          }),
-        }
-      );
-    }
+    // AIDEV-NOTE: Honcho v3 messages endpoint requires { messages: [...] } wrapper.
+    // Batch all buffered messages in a single request for efficiency.
+    await honcho(
+      `/workspaces/${WORKSPACE}/sessions/${sessionId}/messages`,
+      {
+        method: "POST",
+        body: JSON.stringify({ messages: state.buffer }),
+      }
+    );
     state.buffer = [];
   } catch {
     // Keep buffer — will retry on next flush
@@ -255,21 +244,21 @@ export const HonchoSync: Plugin = async ({ client }) => {
 
             // Flush at cadence
             if (state.turnCount % CADENCE === 0) {
-              await flushBuffer(state);
+              await flushBuffer(state, sid);
             }
           }
         }
 
         // Flush remaining buffer when session goes idle
         if (event.type === "session.idle") {
-          await flushBuffer(state);
+          await flushBuffer(state, sid);
         }
 
         // Clean up
         if (event.type === "session.deleted") {
           const state = sessions.get(sid);
           if (state) {
-            await flushBuffer(state); // flush before delete
+            await flushBuffer(state, sid); // flush before delete
             sessions.delete(sid);
           }
         }
