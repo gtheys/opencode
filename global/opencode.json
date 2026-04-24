@@ -102,7 +102,7 @@
         "HONCHO_USER_NAME": "geert",
         "HONCHO_WORKSPACE_ID": "default"
       },
-      "enabled": true
+      "enabled": false
     },
     "ms365": {
       "type": "local",
@@ -124,6 +124,15 @@
         "/home/geert/Code/personal/minutes/crates/mcp/src/index.ts"
       ],
       "enabled": false
+    }
+  },
+  "plugin": [
+    "@honcho-ai/opencode-honcho"
+  ],
+  "command": {
+    "honcho:config": {
+      "description": "Change shared OpenCode Honcho config values.",
+      "template": "Use the native Honcho config UI backed by `~/.honcho/config.json`. Show the available config fields, verify the selected field still exists case-insensitively in `~/.honcho/config.json`, then ask `What should it be set to:`. If the field has presets, ask `What should it be set to: <preset options>`. If `~/.honcho/config.json` does not exist, tell the user that the config does not exist there."
     }
   }
 }
