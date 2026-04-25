@@ -124,6 +124,14 @@
         "/home/geert/Code/personal/minutes/crates/mcp/src/index.ts"
       ],
       "enabled": false
+    },
+    "qmd": {
+      "type": "local",
+      "command": [
+        "qmd",
+        "mcp"
+      ],
+      "enabled": true
     }
   },
   "plugin": [
