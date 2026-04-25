@@ -1,0 +1,19 @@
+# Dependencies
+**/node_modules/
+**/package-lock.json
+**/bun.lock
+**/package.json
+
+# Auth & secrets (never commit these)
+auth.json
+.env
+.env.*
+*.pem
+*.key
+
+# Runtime state
+sessions/
+
+# IDE
+.vscode/
+.idea/

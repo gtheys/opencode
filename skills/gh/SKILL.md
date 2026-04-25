@@ -1,5 +1,5 @@
 ---
-name: gh-cli
+name: gh
 description: Use when user asks to work with any tasks related to GitHub, including repositories, issues, pull requests, Actions, projects, releases, gists, codespaces, organizations, extensions, and all GitHub operations from the command line.
 ---
 
