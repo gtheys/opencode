@@ -101,6 +101,12 @@ Some configs reference environment variables. Set these in your shell:
 - The `.gitignore` blocks these automatically
 - `global/opencode.json` uses `${VAR}` syntax for secrets — set them in your environment
 
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [`docs/humanlayer-pi-workflow.md`](docs/humanlayer-pi-workflow.md) | End-to-end workflow guide for HumanLayer + Pi agent integration |
+
 ## Updating
 
 This repo is the source of truth. Edit files here, then re-run `./install.sh` or let the symlinks pick up changes automatically.
