@@ -24,7 +24,7 @@ ln -sf "$REPO_DIR/coding/AGENTS.md" "$PI_AGENT_DIR/AGENTS.md"
 echo "✅ ~/.pi/agent/AGENTS.md → coding/AGENTS.md"
 
 # Symlink pi-native skills
-for skill in jira-taskwarrior-workflow code-reviewer test-diagnostician pr-reviewer git-commit-helper; do
+for skill in jira-taskwarrior-workflow code-reviewer test-diagnostician pr-reviewer pr-summary git-commit-helper; do
   src="$REPO_DIR/pi/skills/$skill"
   dst="$PI_AGENT_DIR/skills/$skill"
   if [[ -d "$src" ]]; then

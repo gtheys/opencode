@@ -1,0 +1,382 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# pr-summary — Generate PR summary and create/update GitHub PR
+# Usage: pr-summary <JIRA_TICKET> ["PR Title"] [--draft]
+#
+# Example:
+#   pr-summary IMP-7829 "Fix dual-write soft-delete"
+#   pr-summary IMP-7829 --draft
+
+JIRA_TICKET="${1:-}"
+PR_TITLE="${2:-}"
+DRAFT=false
+
+if [[ -z "$JIRA_TICKET" ]]; then
+  echo "Usage: pr-summary <JIRA_TICKET> [\"PR Title\"] [--draft]"
+  echo ""
+  echo "Examples:"
+  echo "  pr-summary IMP-7829 \"Fix dual-write soft-delete\""
+  echo "  pr-summary IMP-7829 --draft"
+  exit 1
+fi
+
+# Handle --draft flag
+if [[ "$PR_TITLE" == "--draft" ]]; then
+  DRAFT=true
+  PR_TITLE=""
+fi
+
+# Validate we're in a git repo
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+  echo "❌ Not a git repository"
+  exit 1
+fi
+
+# Get repo info
+REPO_NAME=$(basename "$(git rev-parse --show-toplevel)")
+BASE_BRANCH="develop"
+CURRENT_BRANCH=$(git branch --show-current)
+
+# Auto-generate PR title from branch if not provided
+if [[ -z "$PR_TITLE" ]]; then
+  # Try to extract from branch name: IMP-7829-description-here
+  PR_TITLE=$(echo "$CURRENT_BRANCH" | sed -E "s/^${JIRA_TICKET}-//" | sed 's/-/ /g' | sed 's/\b\w/\u&/g')
+  if [[ -z "$PR_TITLE" || "$PR_TITLE" == "$CURRENT_BRANCH" ]]; then
+    PR_TITLE="$JIRA_TICKET changes"
+  fi
+fi
+
+FULL_TITLE="[$JIRA_TICKET] $PR_TITLE"
+
+echo "🎫 JIRA Ticket: $JIRA_TICKET"
+echo "📝 PR Title:    $FULL_TITLE"
+echo "🌿 Base Branch: $BASE_BRANCH"
+echo "🌿 Head Branch: $CURRENT_BRANCH"
+echo "📁 Repo:        $REPO_NAME"
+echo ""
+
+# ─── FETCH & PULL ───────────────────────────────────────────────────
+
+echo "🔄 Fetching from origin..."
+git fetch origin
+
+echo "🔄 Pulling latest $BASE_BRANCH..."
+git pull origin "$BASE_BRANCH" || {
+  echo "⚠️  Could not pull $BASE_BRANCH. You may have uncommitted changes or conflicts."
+  read -p "Continue anyway? [y/N] " -n 1 -r
+  echo
+  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    exit 1
+  fi
+}
+
+echo ""
+
+# ─── CHECK FOR EXISTING PR ──────────────────────────────────────────
+
+echo "🔍 Checking for existing PR..."
+EXISTING_PR=$(GH_PAGER=cat gh pr view "$CURRENT_BRANCH" --json number,url 2>/dev/null || true)
+
+if [[ -n "$EXISTING_PR" && "$EXISTING_PR" != "null" ]]; then
+  PR_NUMBER=$(echo "$EXISTING_PR" | jq -r '.number // empty')
+  PR_URL=$(echo "$EXISTING_PR" | jq -r '.url // empty')
+  echo "✅ Found existing PR #$PR_NUMBER: $PR_URL"
+  EXISTING=true
+else
+  echo "🆕 No existing PR found for branch $CURRENT_BRANCH"
+  EXISTING=false
+fi
+
+echo ""
+
+# ─── GENERATE PR BODY ───────────────────────────────────────────────
+
+echo "📝 Generating PR description..."
+
+# Get git stats
+GIT_LOG=$(git log "${BASE_BRANCH}..HEAD" --oneline 2>/dev/null || echo "")
+GIT_DIFF_STAT=$(git diff "${BASE_BRANCH}..HEAD" --stat 2>/dev/null || echo "")
+GIT_FILES=$(git diff "${BASE_BRANCH}..HEAD" --name-only 2>/dev/null || echo "")
+
+# Determine change type
+CHANGE_TYPE=""
+if echo "$GIT_LOG" | grep -qiE "fix|bug|hotfix"; then
+  CHANGE_TYPE="Bug fix"
+elif echo "$GIT_LOG" | grep -qiE "feat|feature|add|new"; then
+  CHANGE_TYPE="New feature"
+elif echo "$GIT_LOG" | grep -qiE "break|breaking|deprecat|remov"; then
+  CHANGE_TYPE="Breaking change"
+elif echo "$GIT_LOG" | grep -qiE "doc|readme|md$"; then
+  CHANGE_TYPE="Documentation update"
+else
+  CHANGE_TYPE="Bug fix"
+fi
+
+# Check if tests were modified
+TESTS_ADDED=""
+if echo "$GIT_FILES" | grep -qE "(test|spec)\.(ts|js|py)"; then
+  TESTS_ADDED="- [x] Tests added or updated"
+else
+  TESTS_ADDED="- [ ] Tests added or updated *(no test changes in this PR)*"
+fi
+
+# ─── ANALYZE CHANGES ────────────────────────────────────────────────
+
+# Categorize files
+SCHEMA_FILES=$(echo "$GIT_FILES" | grep -E "(migration|schema|alembic|prisma|\.sql)$" || true)
+API_FILES=$(echo "$GIT_FILES" | grep -E "(controller|route|handler|endpoint|api|resolver)" || true)
+SERVICE_FILES=$(echo "$GIT_FILES" | grep -E "(service|usecase|interactor|domain)" || true)
+REPO_FILES=$(echo "$GIT_FILES" | grep -E "(repository|dao|model|entity)" || true)
+TEST_FILES=$(echo "$GIT_FILES" | grep -E "(test|spec)" || true)
+CONFIG_FILES=$(echo "$GIT_FILES" | grep -E "(\.(json|yml|yaml|toml|env|config)|dockerfile|docker-compose|cdktf|terraform)" || true)
+UI_FILES=$(echo "$GIT_FILES" | grep -E "(component|page|screen|view|\.tsx$|\.jsx$|\.vue$|\.svelte$)" || true)
+UTIL_FILES=$(echo "$GIT_FILES" | grep -E "(util|helper|common|shared|lib/)" || true)
+TYPE_FILES=$(echo "$GIT_FILES" | grep -E "(\.d\.ts$|types?\.|interface)" || true)
+
+# Detect patterns
+HAS_MIGRATIONS=$([[ -n "$SCHEMA_FILES" ]] && echo "true" || echo "false")
+HAS_API_CHANGES=$([[ -n "$API_FILES" ]] && echo "true" || echo "false")
+HAS_TESTS=$([[ -n "$TEST_FILES" ]] && echo "true" || echo "false")
+HAS_BREAKING=$(echo "$GIT_LOG" | grep -qiE "break|breaking|deprecat|remov|delet" && echo "true" || echo "false")
+HAS_FIX=$(echo "$GIT_LOG" | grep -qiE "fix|bug|hotfix|resolv|patch" && echo "true" || echo "false")
+HAS_FEAT=$(echo "$GIT_LOG" | grep -qiE "feat|feature|add|implement|introduc" && echo "true" || echo "false")
+HAS_PERF=$(echo "$GIT_LOG" | grep -qiE "perf|performance|optim|slow|query|n\+1|index" && echo "true" || echo "false")
+HAS_REFACTOR=$(echo "$GIT_LOG" | grep -qiE "refactor|rework|restructur|clean" && echo "true" || echo "false")
+
+# Extract key themes from commits (remove ticket prefixes, dedupe)
+COMMIT_THEMES=$(echo "$GIT_LOG" | sed -E 's/^[a-f0-9]+ //' | sed -E 's/^\[?[A-Z]+-[0-9]+\]?[-:]?\s*//' | sort -u | head -10)
+
+# Build summary bullets from themes
+SUMMARY_BULLETS=""
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  SUMMARY_BULLETS="${SUMMARY_BULLETS}- $line
+"
+done <<< "$COMMIT_THEMES"
+
+# Build "What changed" section
+WHAT_CHANGED=""
+if [[ "$HAS_FIX" == "true" ]]; then
+  WHAT_CHANGED="${WHAT_CHANGED}- Fixes a bug where [...describe the issue...]
+"
+fi
+if [[ "$HAS_FEAT" == "true" ]]; then
+  WHAT_CHANGED="${WHAT_CHANGED}- Adds new functionality for [...describe feature...]
+"
+fi
+if [[ "$HAS_REFACTOR" == "true" ]]; then
+  WHAT_CHANGED="${WHAT_CHANGED}- Refactors [...describe what and why...]
+"
+fi
+if [[ "$HAS_PERF" == "true" ]]; then
+  WHAT_CHANGED="${WHAT_CHANGED}- Improves performance by [...describe optimization...]
+"
+fi
+if [[ "$HAS_BREAKING" == "true" ]]; then
+  WHAT_CHANGED="${WHAT_CHANGED}- ⚠️ **Breaking change**: [...describe impact...]
+"
+fi
+
+# Categorize files into a list
+FILE_CATEGORIES=""
+if [[ -n "$SCHEMA_FILES" ]]; then
+  FILE_CATEGORIES="${FILE_CATEGORIES}**Schema / DB:**
+$(echo "$SCHEMA_FILES" | sed 's/^/- /')
+
+"
+fi
+if [[ -n "$API_FILES" ]]; then
+  FILE_CATEGORIES="${FILE_CATEGORIES}**API / Routes:**
+$(echo "$API_FILES" | sed 's/^/- /')
+
+"
+fi
+if [[ -n "$SERVICE_FILES" ]]; then
+  FILE_CATEGORIES="${FILE_CATEGORIES}**Services / Business Logic:**
+$(echo "$SERVICE_FILES" | sed 's/^/- /')
+
+"
+fi
+if [[ -n "$REPO_FILES" ]]; then
+  FILE_CATEGORIES="${FILE_CATEGORIES}**Repositories / Data Access:**
+$(echo "$REPO_FILES" | sed 's/^/- /')
+
+"
+fi
+if [[ -n "$UI_FILES" ]]; then
+  FILE_CATEGORIES="${FILE_CATEGORIES}**UI / Frontend:**
+$(echo "$UI_FILES" | sed 's/^/- /')
+
+"
+fi
+if [[ -n "$TEST_FILES" ]]; then
+  FILE_CATEGORIES="${FILE_CATEGORIES}**Tests:**
+$(echo "$TEST_FILES" | sed 's/^/- /')
+
+"
+fi
+if [[ -n "$CONFIG_FILES" ]]; then
+  FILE_CATEGORIES="${FILE_CATEGORIES}**Config / Infra:**
+$(echo "$CONFIG_FILES" | sed 's/^/- /')
+
+"
+fi
+if [[ -n "$TYPE_FILES" ]]; then
+  FILE_CATEGORIES="${FILE_CATEGORIES}**Types / Interfaces:**
+$(echo "$TYPE_FILES" | sed 's/^/- /')
+
+"
+fi
+if [[ -n "$UTIL_FILES" ]]; then
+  FILE_CATEGORIES="${FILE_CATEGORIES}**Utils / Helpers:**
+$(echo "$UTIL_FILES" | sed 's/^/- /')
+
+"
+fi
+# Catch remaining files
+CATEGORIZED=$(echo -e "${SCHEMA_FILES}\n${API_FILES}\n${SERVICE_FILES}\n${REPO_FILES}\n${UI_FILES}\n${TEST_FILES}\n${CONFIG_FILES}\n${TYPE_FILES}\n${UTIL_FILES}" | sort -u)
+OTHER_FILES=$(echo "$GIT_FILES" | grep -vFxf <(echo "$CATEGORIZED") || true)
+if [[ -n "$OTHER_FILES" ]]; then
+  FILE_CATEGORIES="${FILE_CATEGORIES}**Other:**
+$(echo "$OTHER_FILES" | sed 's/^/- /')
+
+"
+fi
+
+# Migration warning
+MIGRATION_NOTE=""
+if [[ "$HAS_MIGRATIONS" == "true" ]]; then
+  MIGRATION_NOTE="
+
+> ⚠️ **Database migrations included.** Ensure migrations are run in the correct order and tested against a copy of production data before deploying.
+"
+fi
+
+# Generate the PR body
+PR_BODY=$(cat <<EOF
+## Description
+
+**JIRA Ticket:** [$JIRA_TICKET](https://salaryhero.atlassian.net/browse/$JIRA_TICKET)
+**Related Documentation:** N/A
+
+### Summary
+
+$SUMMARY_BULLETS
+### What Changed
+
+$WHAT_CHANGED
+### Files Changed
+
+$FILE_CATEGORIES
+### Commit History
+
+\`\`\`
+$GIT_LOG
+\`\`\`
+
+### Diff Stats
+
+\`\`\`
+$GIT_DIFF_STAT
+\`\`\`
+$MIGRATION_NOTE
+## Type of Change
+
+- [x] $CHANGE_TYPE
+- [ ] New feature
+- [ ] Breaking change
+- [ ] Documentation update
+
+## Testing
+
+- [x] Unit tests pass locally
+$TESTS_ADDED
+- [x] Manually tested critical paths
+
+## Checklist
+
+- [x] Code follows project style guidelines
+- [x] Self-review completed
+- [x] Complex logic is commented / documented
+- [x] No new warnings or console errors introduced
+- [x] Dependent changes merged or noted
+
+---
+
+*This PR description was auto-generated. Please review and edit as needed before submitting.*
+EOF
+)
+
+echo ""
+echo "━" | head -c 60 && echo ""
+echo "$PR_BODY"
+echo "━" | head -c 60 && echo ""
+
+# ─── SAVE TO FILE ───────────────────────────────────────────────────
+
+NOTES_DIR="notes/PR"
+mkdir -p "$NOTES_DIR"
+
+SAFE_TITLE=$(echo "$FULL_TITLE" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd '[:alnum:]-')
+PR_FILE="${NOTES_DIR}/${SAFE_TITLE}.md"
+
+cat > "$PR_FILE" <<EOF
+---
+createdAt: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+ticket: $JIRA_TICKET
+branch: $CURRENT_BRANCH
+base: $BASE_BRANCH
+---
+
+# $FULL_TITLE
+
+$PR_BODY
+EOF
+
+echo "💾 Saved PR description to: $PR_FILE"
+echo ""
+
+# ─── CREATE OR UPDATE PR ────────────────────────────────────────────
+
+if [[ "$EXISTING" == "true" ]]; then
+  echo "📝 Updating existing PR #$PR_NUMBER..."
+  gh pr edit "$CURRENT_BRANCH" --title "$FULL_TITLE" --body "$PR_BODY"
+  echo "✅ Updated PR: $PR_URL"
+else
+  DRAFT_FLAG=""
+  if [[ "$DRAFT" == "true" ]]; then
+    DRAFT_FLAG="--draft"
+    echo "📝 Creating DRAFT PR..."
+  else
+    echo "📝 Creating PR..."
+  fi
+
+  PR_URL=$(gh pr create \
+    --title "$FULL_TITLE" \
+    --body "$PR_BODY" \
+    --base "$BASE_BRANCH" \
+    $DRAFT_FLAG \
+    2>&1)
+
+  if [[ $? -eq 0 ]]; then
+    echo "✅ Created PR: $PR_URL"
+    
+    # Re-fetch to get the PR number
+    PR_NUMBER=$(GH_PAGER=cat gh pr view "$CURRENT_BRANCH" --json number 2>/dev/null | jq -r '.number // empty')
+    
+    # Update the saved file with the PR URL
+    sed -i "1a\prUrl: $PR_URL" "$PR_FILE" 2>/dev/null || true
+  else
+    echo "❌ Failed to create PR:"
+    echo "$PR_URL"
+    exit 1
+  fi
+fi
+
+echo ""
+echo "🎉 Done!"
+echo "   File: $PR_FILE"
+if [[ -n "${PR_URL:-}" ]]; then
+  echo "   URL:  $PR_URL"
+fi
