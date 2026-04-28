@@ -27,7 +27,7 @@ echo "✅ ~/.pi/agent/AGENTS.md → coding/AGENTS.md"
 # (see Next Steps below) — no symlinks needed.
 
 # Symlink pi-native prompts
-for prompt in sonar; do
+for prompt in sonar commit debug local-review; do
   src="$REPO_DIR/pi/prompts/$prompt.md"
   dst="$PI_AGENT_DIR/prompts/$prompt.md"
   if [[ -f "$src" ]]; then
@@ -75,6 +75,7 @@ echo "         \"$REPO_DIR/coding/skills\","
 echo "         \"~/.config/opencode/skills\""
 echo "       ],"
 echo "       \"prompts\": ["
+echo "         \"$REPO_DIR/pi/prompts\","
 echo "         \"$REPO_DIR/coding/commands\","
 echo "         \"$REPO_DIR/coding/agent\""
 echo "       ]"
