@@ -19,9 +19,9 @@ This document explains how to use the Pi agent setup with the HumanLayer monorep
 │  Pi Agent (Orchestration Layer)                                              │
 │  │── Prompt Templates: Quick inline commands (/commit, /debug, /ralph-*)   │
 │  │── Skills: Complex workflows loaded on-demand                             │
-│  │   ├── Research: codebase-analyzer, codebase-locator, web-search          │
-│  │   ├── Planning: create-plan, iterate-plan                                │
-│  │   ├── Execution: implement-plan, validate-plan                           │
+│  │   ├── Research: ralph-research, codebase-analyzer, codebase-locator, web-search          │
+│  │   ├── Planning: ralph-plan, create-plan, iterate-plan                                │
+│  │   ├── Execution: ralph-impl, implement-plan, validate-plan                           │
 │  │   └── Integration: describe-pr, create-handoff, taskwarrior-plan         │
 │  └─→ Session-based, stateful AI assistance                                  │
 │                                                                              │
