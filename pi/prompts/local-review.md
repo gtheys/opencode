@@ -1,64 +1,47 @@
-<!-- AIDEV-NOTE: HumanLayer workflow prompt. Review a colleague's branch locally before they open a PR. -->
+---
+description: Set up worktree for reviewing colleague's branch
+argument-hint: "<gh_username>:<branchName>"
+---
 
-You are a code reviewer. Your job is to review a colleague's branch locally and provide feedback before they open a PR.
+Set up a local review environment for a colleague's branch. This involves creating a worktree, setting up dependencies, and launching a new session.
 
-## Input
+## Process
 
-The user provides: `username:branch-name` (e.g., `jane:feature/auth-1234`)
+When invoked with a parameter like `gh_username:branchName`:
 
-## Workflow
+1. **Parse the input**:
+   - Extract GitHub username and branch name from the format `username:branchname`
+   - If no parameter provided, ask for it in the format: `gh_username:branchName`
 
-1. **Fetch the branch**
-   ```bash
-   git fetch origin <branch-name>
-   ```
+2. **Extract ticket information**:
+   - Look for ticket numbers in the branch name (e.g., `eng-1696`, `ENG-1696`)
+   - Use this to create a short worktree directory name
+   - If no ticket found, use a sanitized version of the branch name
 
-2. **Check out locally**
-   ```bash
-   git checkout -b review/<branch-name> origin/<branch-name>
-   ```
+3. **Set up the remote and worktree**:
+   - Check if the remote already exists using `git remote -v`
+   - If not, add it: `git remote add USERNAME git@github.com:USERNAME/humanlayer`
+   - Fetch from the remote: `git fetch USERNAME`
+   - Create worktree: `git worktree add -b BRANCHNAME ~/wt/humanlayer/SHORT_NAME USERNAME/BRANCHNAME`
 
-3. **Review the diff**
-   ```bash
-   git diff origin/main...HEAD
-   ```
+4. **Configure the worktree**:
+   - Copy Pi settings: `cp .pi/settings.json WORKTREE/.pi/`
+   - Run setup: `make -C WORKTREE setup`
+   - Initialize thoughts: `cd WORKTREE && humanlayer thoughts init --directory humanlayer`
 
-4. **Inspect key files**
-   - Read changed files
-   - Run linters/tests if applicable
-   - Check for:
-     - Security issues (secrets, injections)
-     - Logic errors
-     - Missing tests
-     - Style violations
-     - Documentation gaps
+## Error Handling
 
-5. **Provide feedback**
-   - Summarize the changes
-   - List issues found (if any)
-   - Suggest improvements
-   - Mark as approved or request changes
+- If worktree already exists, inform the user they need to remove it first
+- If remote fetch fails, check if the username/repo exists
+- If setup fails, provide the error but continue with the launch
 
-6. **Clean up**
-   ```bash
-   git checkout main
-   git branch -D review/<branch-name>
-   ```
-
-## Output Format
+## Example Usage
 
 ```
-## Review: <branch-name> by <username>
-
-### Summary
-[What this PR does]
-
-### Issues Found
-- [ ] [Severity] [Description with file:line]
-
-### Suggestions
-- [Improvement suggestion]
-
-### Verdict
-[Approve / Request changes / Comment]
+/local-review samdickson22:sam/eng-1696-hotkey-for-yolo-mode
 ```
+
+This will:
+- Add 'samdickson22' as a remote
+- Create worktree at `~/wt/humanlayer/eng-1696`
+- Set up the environment

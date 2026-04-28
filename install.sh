@@ -26,17 +26,14 @@ echo "✅ ~/.pi/agent/AGENTS.md → coding/AGENTS.md"
 # Skills are loaded via paths in ~/.pi/agent/settings.json
 # (see Next Steps below) — no symlinks needed.
 
-# Symlink pi-native prompts
-for prompt in sonar commit debug local-review; do
-  src="$REPO_DIR/pi/prompts/$prompt.md"
+# Symlink all pi-native prompts dynamically
+for src in "$REPO_DIR"/pi/prompts/*.md; do
+  [[ -f "$src" ]] || continue
+  prompt=$(basename "$src" .md)
   dst="$PI_AGENT_DIR/prompts/$prompt.md"
-  if [[ -f "$src" ]]; then
-    rm -f "$dst"
-    ln -sf "$src" "$dst"
-    echo "✅ ~/.pi/agent/prompts/$prompt.md"
-  else
-    echo "⚠️  pi/prompts/$prompt.md not found, skipping"
-  fi
+  rm -f "$dst"
+  ln -sf "$src" "$dst"
+  echo "✅ ~/.pi/agent/prompts/$prompt.md"
 done
 
 # Update pi settings.json to load opencode skills and prompts
