@@ -57,18 +57,19 @@ Shared configuration for [pi](https://github.com/mariozechner/pi) and [OpenCode]
 
 This symlinks:
 - `coding/AGENTS.md` → `~/.pi/agent/AGENTS.md`
-- `pi/skills/*` → `~/.pi/agent/skills/`
 - `pi/prompts/*` → `~/.pi/agent/prompts/`
 - `global/` → `~/.config/opencode/`
+
+Skills are loaded by adding paths to `~/.pi/agent/settings.json` (see below) — no symlinks needed.
 
 Then add to `~/.pi/agent/settings.json`:
 
 ```json
 {
   "skills": [
+    "~/Code/salaryhero/opencode/pi/skills",
     "~/Code/salaryhero/opencode/global/skills",
     "~/Code/salaryhero/opencode/coding/skills",
-    "~/Code/salaryhero/opencode/skills",
     "~/.config/opencode/skills"
   ],
   "prompts": [

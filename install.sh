@@ -23,18 +23,8 @@ fi
 ln -sf "$REPO_DIR/coding/AGENTS.md" "$PI_AGENT_DIR/AGENTS.md"
 echo "✅ ~/.pi/agent/AGENTS.md → coding/AGENTS.md"
 
-# Symlink pi-native skills
-for skill in jira-taskwarrior-workflow code-reviewer test-diagnostician pr-reviewer pr-summary git-commit-helper gh; do
-  src="$REPO_DIR/pi/skills/$skill"
-  dst="$PI_AGENT_DIR/skills/$skill"
-  if [[ -d "$src" ]]; then
-    rm -rf "$dst"
-    ln -sf "$src" "$dst"
-    echo "✅ ~/.pi/agent/skills/$skill"
-  else
-    echo "⚠️  pi/skills/$skill not found, skipping"
-  fi
-done
+# Skills are loaded via paths in ~/.pi/agent/settings.json
+# (see Next Steps below) — no symlinks needed.
 
 # Symlink pi-native prompts
 for prompt in sonar; do
@@ -79,9 +69,9 @@ echo "Next steps:"
 echo "  1. Add environment variables for any \${VAR} references in configs"
 echo "  2. Update ~/.pi/agent/settings.json with:"
 echo "       \"skills\": ["
+echo "         \"$REPO_DIR/pi/skills\","
 echo "         \"$REPO_DIR/global/skills\","
 echo "         \"$REPO_DIR/coding/skills\","
-echo "         \"$REPO_DIR/skills\","
 echo "         \"~/.config/opencode/skills\""
 echo "       ],"
 echo "       \"prompts\": ["
