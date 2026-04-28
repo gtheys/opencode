@@ -12,7 +12,9 @@ Shared configuration for [pi](https://github.com/mariozechner/pi) and [OpenCode]
 │   │   ├── code-reviewer/
 │   │   ├── test-diagnostician/
 │   │   ├── pr-reviewer/
-│   │   └── git-commit-helper/
+│   │   ├── pr-summary/
+│   │   ├── git-commit-helper/
+│   │   └── gh/
 │   └── prompts/                 # Pi prompt templates (/name)
 │       └── sonar.md
 ├── global/                      # OpenCode shared config
@@ -84,7 +86,9 @@ Then add to `~/.pi/agent/settings.json`:
 | `code-reviewer` | After code changes, "review my code" |
 | `test-diagnostician` | "run tests", "tests failing" |
 | `pr-reviewer` | "PR #123", "review this PR" |
+| `pr-summary` | "pr summary", "create pr" |
 | `git-commit-helper` | "commit", "git commit" |
+| `gh` | GitHub CLI operations |
 
 ## Environment Variables
 
