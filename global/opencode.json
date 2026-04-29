@@ -54,7 +54,8 @@
     "rules/honcho.md",
     "../coding/skills/tdd-workflow/SKILL.md",
     "../coding/skills/security-review/SKILL.md",
-    "../coding/skills/coding-standards/SKILL.md"
+    "../coding/skills/coding-standards/SKILL.md",
+    "skills/git-town/SKILL.md"
   ],
   "permission": {
     "doom_loop": "deny",
