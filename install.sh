@@ -46,6 +46,15 @@ if [[ -f "$SETTINGS" ]]; then
   echo "   (Add skills/prompts paths manually — see README.md)"
 fi
 
+# ─── PI Extensions ────────────────────────────────────────────────
+
+echo ""
+echo "📦 Installing pi extensions..."
+pi install https://github.com/sting8k/pi-vcc
+pi install npm:@tomooshi/condensed-milk-pi
+pi install https://github.com/tomooshi/caveman-milk-pi
+echo "✅ Pi extensions installed"
+
 # ─── OpenCode ──────────────────────────────────────────────────────
 
 # Symlink global opencode config
