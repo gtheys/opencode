@@ -14,11 +14,13 @@ Analyze SonarCloud coverage gaps and quality issues for a specific PR. Generates
 ## Process
 
 1. **Verify Token**: Check `$SONARQUBE_TOKEN` environment variable
-2. **Fetch Coverage**: Call SonarCloud API for PR coverage metrics
-3. **Fetch Issues**: Call SonarCloud API for PR issues
-4. **Parse Data**: Group coverage by file, issues by severity/type/file/rule
-5. **Generate Report**: Coverage-first, then quality issues, then action plan
-6. **Cleanup**: Remove temporary files
+2. **Detect Project Config**: Auto-detect from `sonar-project.properties` in repo root (fallback: env vars)
+3. **Detect PR Number**: Auto-detect from current branch via `gh pr view` (fallback: `$ARGUMENTS`)
+4. **Fetch Coverage**: Call SonarCloud API for PR coverage metrics
+5. **Fetch Issues**: Call SonarCloud API for PR issues
+6. **Parse Data**: Group coverage by file, issues by severity/type/file/rule
+7. **Generate Report**: Coverage-first, then quality issues, then action plan
+8. **Cleanup**: Remove temporary files
 
 ## Prerequisites
 
@@ -38,64 +40,140 @@ echo $SONARQUBE_TOKEN
 2. Generate new token
 3. Copy and export as environment variable
 
-### Project Configuration
+### Project Configuration (Auto-Detected)
 
-Configure your SonarCloud project details:
+**The command auto-detects project config from `sonar-project.properties` in the repo root.** No manual configuration needed if the file exists.
+
+If no `sonar-project.properties` is found, fall back to environment variables:
 
 ```bash
-# Add to project's CLAUDE.md or as environment variables
 SONAR_ORGANIZATION="your-org-name"
 SONAR_PROJECT_KEY="your-org_your-project"
 SONAR_BASE_URL="https://sonarcloud.io/api"
 ```
 
-**If not set:** Ask user to provide organization and project key.
+**If neither exists:** Ask user to provide organization and project key.
+
+### PR Number Detection
+
+The command auto-detects the PR number from the current git branch:
+
+```bash
+gh pr view --json number -q .number
+```
+
+If the `$ARGUMENTS` is empty, the auto-detected PR number is used.
+If `$ARGUMENTS` contains a number, that takes priority.
+
+## Auto-Detection Logic
+
+### Step 1: Detect project config from `sonar-project.properties`
+
+```bash
+if [ -f "sonar-project.properties" ]; then
+  SONAR_PROJECT_KEY=$(grep '^sonar.projectKey=' sonar-project.properties | cut -d= -f2)
+  SONAR_ORGANIZATION=$(grep '^sonar.organization=' sonar-project.properties | cut -d= -f2)
+  SONAR_BASE_URL="https://sonarcloud.io/api"
+fi
+```
+
+**Fallback priority:**
+1. `sonar-project.properties` (auto-detected)
+2. Environment variables (`SONAR_PROJECT_KEY`, `SONAR_ORGANIZATION`)
+3. Ask user
+
+### Step 2: Detect PR number
+
+```bash
+# If ARGUMENTS is empty, auto-detect from current branch
+if [ -z "$ARGUMENTS" ]; then
+  PR_NUMBER=$(gh pr view --json number -q .number 2>/dev/null)
+  if [ -z "$PR_NUMBER" ]; then
+    echo "ERROR: No PR found for current branch. Provide PR number as argument."
+    exit 1
+  fi
+else
+  PR_NUMBER="$ARGUMENTS"
+fi
+```
+
+**Fallback priority:**
+1. Explicit argument (e.g. `/sonarqube 283`)
+2. Auto-detect from `gh pr view`
+3. Error with instructions
+
+## Prerequisites Check
+
+Before making any API calls, **always** run this detection sequence:
+
+```bash
+# 1. Verify token
+if [ -z "$SONARQUBE_TOKEN" ]; then
+  echo "ERROR: SONARQUBE_TOKEN not set. Export it:"
+  echo "  export SONARQUBE_TOKEN=your_token_here"
+  exit 1
+fi
+
+# 2. Auto-detect project config
+if [ -f "sonar-project.properties" ]; then
+  SONAR_PROJECT_KEY=$(grep '^sonar.projectKey=' sonar-project.properties | cut -d= -f2)
+  SONAR_ORGANIZATION=$(grep '^sonar.organization=' sonar-project.properties | cut -d= -f2)
+  echo "Auto-detected from sonar-project.properties:"
+  echo "  projectKey: $SONAR_PROJECT_KEY"
+  echo "  organization: $SONAR_ORGANIZATION"
+fi
+
+# 3. Fallback to env vars if not set by properties
+SONAR_PROJECT_KEY=${SONAR_PROJECT_KEY:-$SONAR_PROJECT_KEY}
+SONAR_ORGANIZATION=${SONAR_ORGANIZATION:-$SONAR_ORGANIZATION}
+
+if [ -z "$SONAR_PROJECT_KEY" ]; then
+  echo "ERROR: SONAR_PROJECT_KEY not set and no sonar-project.properties found."
+  echo "  Either create sonar-project.properties or export SONAR_PROJECT_KEY."
+  exit 1
+fi
+
+# 4. Detect PR number
+if [ -z "$PR_NUMBER" ]; then
+  PR_NUMBER=$(gh pr view --json number -q .number 2>/dev/null)
+  if [ -z "$PR_NUMBER" ]; then
+    echo "ERROR: Could not detect PR number. Provide it as argument: /sonarqube 283"
+    exit 1
+  fi
+  echo "Auto-detected PR number: $PR_NUMBER"
+fi
+```
 
 ## Fetch Coverage
 
-**Important:** Direct curl with `-u "$SONARQUBE_TOKEN:"` fails in zsh due to authentication parsing. Use bash script wrapper:
-
 ```bash
-# Create temporary bash script to handle authentication
-cat > /tmp/fetch_sonar_coverage.sh << 'SCRIPT'
-#!/bin/bash
-curl -s -u "${SONARQUBE_TOKEN}:" \
-  "https://sonarcloud.io/api/measures/component?component=${SONAR_PROJECT_KEY}&pullRequest=$1&metricKeys=coverage,new_coverage,uncovered_files,uncovered_lines,branch_coverage,new_branch_coverage"
-SCRIPT
-
-chmod +x /tmp/fetch_sonar_coverage.sh
-/tmp/fetch_sonar_coverage.sh $PR_NUMBER > /tmp/sonar_coverage_$PR_NUMBER.json
+sonar-fetch-coverage $PR_NUMBER $SONAR_PROJECT_KEY > /tmp/sonar_coverage_$PR_NUMBER.json
 ```
 
-**API Parameters:**
+**Script:** `sonar-fetch-coverage` (on PATH) — handles authentication and all query parameters.
+
+**API Parameters** (handled by the script):
 
 - `component`: Your project key
 - `pullRequest`: PR number
 - `metricKeys`:
   - `coverage`: Overall line coverage percentage
   - `new_coverage`: Coverage on new code
-  - `uncovered_files`: Count of files without coverage
   - `uncovered_lines`: Count of uncovered lines
+  - `lines_to_cover`: Total lines requiring coverage
+  - `new_lines_to_cover`: New code lines requiring coverage
   - `branch_coverage`: Branch/condition coverage percentage
   - `new_branch_coverage`: Branch coverage on new code
 
 ## Fetch Issues
 
-Use bash script wrapper for authentication:
-
 ```bash
-# Create temporary bash script to handle authentication
-cat > /tmp/fetch_sonar.sh << 'SCRIPT'
-#!/bin/bash
-curl -s -u "${SONARQUBE_TOKEN}:" \
-  "https://sonarcloud.io/api/issues/search?componentKeys=${SONAR_PROJECT_KEY}&pullRequest=$1&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true&ps=500"
-SCRIPT
-
-chmod +x /tmp/fetch_sonar.sh
-/tmp/fetch_sonar.sh $PR_NUMBER > /tmp/sonar_pr_$PR_NUMBER.json
+sonar-fetch-issues $PR_NUMBER $SONAR_PROJECT_KEY > /tmp/sonar_pr_$PR_NUMBER.json
 ```
 
-**API Parameters:**
+**Script:** `sonar-fetch-issues` (on PATH) — handles authentication and all query parameters.
+
+**API Parameters** (handled by the script):
 
 - `componentKeys`: Your project key
 - `pullRequest`: PR number
@@ -105,121 +183,27 @@ chmod +x /tmp/fetch_sonar.sh
 
 ## Coverage Analysis Script
 
-Create Node.js coverage analysis script at `/tmp/sonar_coverage_analyze.js`:
-
-```javascript
-const fs = require('fs');
-const prNumber = process.argv[2];
-
-// Parse coverage data
-const coverageData = JSON.parse(fs.readFileSync(`/tmp/sonar_coverage_${prNumber}.json`, 'utf8'));
-const measures = coverageData.component?.measures || [];
-
-// Extract coverage metrics
-const metrics = {};
-measures.forEach(m => {
-  metrics[m.metric] = parseFloat(m.value) || 0;
-});
-
-// Calculate coverage gaps
-const overallCoverage = metrics.coverage || 0;
-const newCoverage = metrics.new_coverage || 0;
-const branchCoverage = metrics.branch_coverage || 0;
-const newBranchCoverage = metrics.new_branch_coverage || 0;
-const uncoveredFiles = parseInt(metrics.uncovered_files || 0);
-const uncoveredLines = parseInt(metrics.uncovered_lines || 0);
-
-// Determine coverage status and gaps
-const coverageGap = Math.max(0, 80 - overallCoverage); // Assuming 80% threshold
-const newCoverageGap = Math.max(0, 80 - newCoverage);
-const branchGap = Math.max(0, 80 - branchCoverage);
-const newBranchGap = Math.max(0, 80 - newBranchCoverage);
-
-// Output coverage analysis
-console.log(JSON.stringify({
-  overallCoverage,
-  newCoverage,
-  branchCoverage,
-  newBranchCoverage,
-  uncoveredFiles,
-  uncoveredLines,
-  gaps: {
-    overall: coverageGap,
-    newCode: newCoverageGap,
-    branch: branchGap,
-    newBranch: newBranchGap
-  },
-  status: {
-    overall: overallCoverage >= 80 ? 'PASS' : 'FAIL',
-    newCode: newCoverage >= 80 ? 'PASS' : 'FAIL',
-    branch: branchCoverage >= 80 ? 'PASS' : 'FAIL',
-    newBranch: newBranchCoverage >= 80 ? 'PASS' : 'FAIL'
-  }
-}, null, 2));
+```bash
+sonar-analyze-coverage $PR_NUMBER > /tmp/sonar_coverage_analysis_$PR_NUMBER.json
 ```
+
+**Script:** `sonar-analyze-coverage` (on PATH)
 
 ## Issues Analysis Script
 
-Create Node.js issues analysis script at `/tmp/sonar_analyze.js`:
-
-```javascript
-const fs = require('fs');
-const prNumber = process.argv[2];
-const data = JSON.parse(fs.readFileSync(`/tmp/sonar_pr_${prNumber}.json`, 'utf8'));
-const issues = data.issues || [];
-
-// Group by severity
-const bySeverity = issues.reduce((acc, i) => {
-  acc[i.severity] = (acc[i.severity] || 0) + 1;
-  return acc;
-}, {});
-
-// Group by type
-const byType = issues.reduce((acc, i) => {
-  acc[i.type] = (acc[i.type] || 0) + 1;
-  return acc;
-}, {});
-
-// Group by file
-const byFile = issues.reduce((acc, i) => {
-  const file = i.component.split(':')[1] || i.component;
-  acc[file] = (acc[file] || 0) + 1;
-  return acc;
-}, {});
-
-// Group by rule
-const byRule = issues.reduce((acc, i) => {
-  if (!acc[i.rule]) {
-    acc[i.rule] = {
-      count: 0,
-      severity: i.severity,
-      message: i.message
-    };
-  }
-  acc[i.rule].count++;
-  return acc;
-}, {});
-
-// Output structured data
-console.log(JSON.stringify({
-  total: data.total,
-  bySeverity,
-  byType,
-  topFiles: Object.entries(byFile)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10),
-  topRules: Object.entries(byRule)
-    .map(([rule, d]) => ({ rule, ...d }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5)
-}, null, 2));
+```bash
+sonar-analyze-issues $PR_NUMBER > /tmp/sonar_analysis_$PR_NUMBER.json
 ```
 
-**Run analyses:**
+**Script:** `sonar-analyze-issues` (on PATH)
+
+**Combined analysis run:**
 
 ```bash
-node /tmp/sonar_coverage_analyze.js $PR_NUMBER > /tmp/sonar_coverage_analysis_$PR_NUMBER.json
-node /tmp/sonar_analyze.js $PR_NUMBER > /tmp/sonar_analysis_$PR_NUMBER.json
+sonar-fetch-coverage $PR_NUMBER $SONAR_PROJECT_KEY > /tmp/sonar_coverage_$PR_NUMBER.json
+sonar-fetch-issues $PR_NUMBER $SONAR_PROJECT_KEY > /tmp/sonar_pr_$PR_NUMBER.json
+sonar-analyze-coverage $PR_NUMBER > /tmp/sonar_coverage_analysis_$PR_NUMBER.json
+sonar-analyze-issues $PR_NUMBER > /tmp/sonar_analysis_$PR_NUMBER.json
 ```
 
 ## Report Format
@@ -234,12 +218,11 @@ Generate formatted report from analysis:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Overall Line Coverage: {COVERAGE}% {STATUS_ICON}
-New Code Coverage: {NEW_COVERAGE}% {STATUS_ICON}
+New Code Coverage: {NEW_LINE_COVERAGE}% {STATUS_ICON}
 Branch Coverage: {BRANCH_COVERAGE}% {STATUS_ICON}
 New Branch Coverage: {NEW_BRANCH_COVERAGE}% {STATUS_ICON}
 
-Uncovered Files: {UNCOVERED_FILES}
-Uncovered Lines: {UNCOVERED_LINES}
+Uncovered Lines: {UNCOVERED_LINES} / {LINES_TO_COVER}
 
 Coverage Thresholds (80% minimum):
 ✅ Overall: {COVERAGE_GAP}% to target
@@ -342,8 +325,9 @@ https://sonarcloud.io/project/pull_requests_list?id={PROJECT_KEY}&pullRequest={P
 | `new_coverage` | Coverage on new code | ≥80% | Required for merge |
 | `branch_coverage` | Branch/condition coverage % | ≥80% | Add branch tests |
 | `new_branch_coverage` | New code branch coverage | ≥80% | Required for merge |
-| `uncovered_files` | Files with no tests | 0 | Prioritize for testing |
 | `uncovered_lines` | Lines not covered | Minimize | Add specific tests |
+| `lines_to_cover` | Total lines requiring coverage | — | Denominator for coverage % |
+| `new_lines_to_cover` | New code lines requiring coverage | — | Denominator for new coverage % |
 
 ### Coverage Status Icons
 
@@ -362,15 +346,11 @@ https://sonarcloud.io/project/pull_requests_list?id={PROJECT_KEY}&pullRequest={P
 
 ## Cleanup
 
-Always clean up temporary files after execution:
+Clean up temporary data files after execution (scripts are on PATH, no cleanup needed for those):
 
 ```bash
-rm -f /tmp/fetch_sonar_coverage.sh
-rm -f /tmp/fetch_sonar.sh
 rm -f /tmp/sonar_coverage_$PR_NUMBER.json
 rm -f /tmp/sonar_pr_$PR_NUMBER.json
-rm -f /tmp/sonar_coverage_analyze.js
-rm -f /tmp/sonar_analyze.js
 rm -f /tmp/sonar_coverage_analysis_$PR_NUMBER.json
 rm -f /tmp/sonar_analysis_$PR_NUMBER.json
 ```
@@ -538,17 +518,14 @@ https://sonarcloud.io/project/overview?id=YOUR_PROJECT_KEY
 ## Usage Examples
 
 ```bash
-# Basic usage
-/sonarqube 170
+# Auto-detect PR from current branch + project from sonar-project.properties
+/sonarqube
 
-# With PR prefix
-/sonarqube PR #234
-
-# Using PR URL
-/sonarqube https://github.com/org/repo/pull/170
+# Explicit PR number
+/sonarqube 283
 
 # Custom severity filter (if implemented)
-/sonarqube 170 --critical-only
+/sonarqube --critical-only
 ```
 
 PR Number: $ARGUMENTS

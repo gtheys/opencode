@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# sonar-fetch-issues — Fetch SonarCloud quality issues for a PR
+# Usage: sonar-fetch-issues <PR_NUMBER> <PROJECT_KEY> [BASE_URL]
+#
+# Requires: SONARQUBE_TOKEN environment variable
+
+PR_NUMBER="${1:?Usage: sonar-fetch-issues <PR_NUMBER> <PROJECT_KEY> [BASE_URL]}"
+PROJECT_KEY="${2:?Error: PROJECT_KEY required}"
+BASE_URL="${3:-https://sonarcloud.io/api}"
+
+if [ -z "${SONARQUBE_TOKEN:-}" ]; then
+  echo "ERROR: SONARQUBE_TOKEN not set. Export it with: export SONARQUBE_TOKEN=your_token" >&2
+  exit 1
+fi
+
+curl -s -u "${SONARQUBE_TOKEN}:" \
+  "${BASE_URL}/issues/search?componentKeys=${PROJECT_KEY}&pullRequest=${PR_NUMBER}&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true&ps=500"

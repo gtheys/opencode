@@ -1,0 +1,96 @@
+#!/usr/bin/env node
+
+/**
+ * sonar-analyze-issues — Analyze SonarCloud quality issues
+ * Usage: sonar-analyze-issues <PR_NUMBER> [issues_json_path]
+ */
+
+const fs = require('fs');
+
+const prNumber = process.argv[2];
+const issuesPath = process.argv[3] || `/tmp/sonar_pr_${prNumber}.json`;
+
+if (!prNumber) {
+  console.error('Usage: sonar-analyze-issues <PR_NUMBER> [issues_json_path]');
+  process.exit(1);
+}
+
+const data = JSON.parse(fs.readFileSync(issuesPath, 'utf8'));
+const issues = data.issues || [];
+
+// Severity priority mapping
+const severityOrder = { BLOCKER: 0, CRITICAL: 1, MAJOR: 2, MINOR: 3, INFO: 4 };
+
+// Group by severity
+const bySeverity = issues.reduce((acc, i) => {
+  acc[i.severity] = (acc[i.severity] || 0) + 1;
+  return acc;
+}, {});
+
+// Group by type
+const byType = issues.reduce((acc, i) => {
+  acc[i.type] = (acc[i.type] || 0) + 1;
+  return acc;
+}, {});
+
+// Group by file (with line numbers)
+const byFile = issues.reduce((acc, i) => {
+  const file = i.component.split(':')[1] || i.component;
+  if (!acc[file]) acc[file] = { count: 0, issues: [] };
+  acc[file].count++;
+  acc[file].issues.push({
+    key: i.key,
+    rule: i.rule,
+    severity: i.severity,
+    message: i.message,
+    line: i.line,
+    textRange: i.textRange,
+    type: i.type
+  });
+  return acc;
+}, {});
+
+// Group by rule
+const byRule = issues.reduce((acc, i) => {
+  if (!acc[i.rule]) {
+    acc[i.rule] = {
+      count: 0,
+      severity: i.severity,
+      message: i.message,
+      issues: []
+    };
+  }
+  acc[i.rule].count++;
+  acc[i.rule].issues.push({
+    file: i.component.split(':')[1] || i.component,
+    line: i.line
+  });
+  return acc;
+}, {});
+
+// AIDEV-NOTE: Structured issues analysis output — per-issue detail included for fix workflow
+console.log(JSON.stringify({
+  total: data.total,
+  bySeverity,
+  byType,
+  byFile: Object.entries(byFile)
+    .sort(([, a], [, b]) => b.count - a.count)
+    .slice(0, 10)
+    .map(([file, d]) => ({ file, count: d.count, issues: d.issues })),
+  byRule: Object.entries(byRule)
+    .map(([rule, d]) => ({ rule, ...d }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5),
+  issues: issues.map(i => ({
+    key: i.key,
+    rule: i.rule,
+    severity: i.severity,
+    type: i.type,
+    message: i.message,
+    file: i.component.split(':')[1] || i.component,
+    line: i.line,
+    textRange: i.textRange,
+    effort: i.effort,
+    debt: i.debt
+  })).sort((a, b) => (severityOrder[a.severity] ?? 9) - (severityOrder[b.severity] ?? 9))
+}, null, 2));
