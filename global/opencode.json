@@ -68,80 +68,76 @@
         "uvx",
         "mcp-grafana"
       ],
-      "environment": {
-        "GRAFANA_URL": "https://grafana.dev.salary-hero.com",
-        "GRAFANA_SERVICE_ACCOUNT_TOKEN": "${GRAFANA_SERVICE_ACCOUNT_TOKEN}"
-      },
-      "enabled": false
     },
-    "firefox-devtools": {
-      "type": "local",
-      "command": [
-        "npx",
-        "firefox-devtools-mcp@latest"
-      ],
-      "enabled": false
-    },
-    "playwright": {
-      "type": "local",
-      "command": [
-        "npx",
-        "@playwright/mcp@latest"
-      ],
-      "enabled": false
-    },
-    "honcho": {
-      "type": "local",
-      "command": [
-        "bun",
-        "run",
-        "/home/geert/honcho/mcp/src/local.ts"
-      ],
-      "environment": {
-        "HONCHO_API_URL": "http://localhost:8000/v3",
-        "HONCHO_API_KEY": "${HONCHO_API_KEY}",
-        "HONCHO_USER_NAME": "geert",
-        "HONCHO_WORKSPACE_ID": "default"
-      },
-      "enabled": false
-    },
-    "ms365": {
-      "type": "local",
-      "command": [
-        "npx",
-        "-y",
-        "@softeria/ms-365-mcp-server",
-        "--org-mode",
-        "--enabled-tools",
-        "list-mail|send-mail|list-calendar|get-calendar-events|create-calendar-event|update-calendar-event|delete-calendar-event|get-calendar-view|list-joined-teams|list-team-channels|send-channel-message|list-chats|get-chat|send-chat-message"
-      ],
-      "enabled": false
-    },
-    "minutes-mcp": {
-      "type": "local",
-      "command": [
-        "bun",
-        "run",
-        "/home/geert/Code/personal/minutes/crates/mcp/src/index.ts"
-      ],
-      "enabled": false
-    },
-    "qmd": {
-      "type": "local",
-      "command": [
-        "qmd",
-        "mcp"
-      ],
-      "enabled": true
-    }
+    "enabled": true
   },
-  "plugin": [
-    "@honcho-ai/opencode-honcho"
-  ],
-  "command": {
-    "honcho:config": {
-      "description": "Change shared OpenCode Honcho config values.",
-      "template": "Use the native Honcho config UI backed by `~/.honcho/config.json`. Show the available config fields, verify the selected field still exists case-insensitively in `~/.honcho/config.json`, then ask `What should it be set to:`. If the field has presets, ask `What should it be set to: <preset options>`. If `~/.honcho/config.json` does not exist, tell the user that the config does not exist there."
-    }
+  "firefox-devtools": {
+    "type": "local",
+    "command": [
+      "npx",
+      "firefox-devtools-mcp@latest"
+    ],
+    "enabled": false
+  },
+  "playwright": {
+    "type": "local",
+    "command": [
+      "npx",
+      "@playwright/mcp@latest"
+    ],
+    "enabled": false
+  },
+  "honcho": {
+    "type": "local",
+    "command": [
+      "bun",
+      "run",
+      "/home/geert/honcho/mcp/src/local.ts"
+    ],
+    "environment": {
+      "HONCHO_API_URL": "http://localhost:8000/v3",
+      "HONCHO_API_KEY": "${HONCHO_API_KEY}",
+      "HONCHO_USER_NAME": "geert",
+      "HONCHO_WORKSPACE_ID": "default"
+    },
+    "enabled": false
+  },
+  "ms365": {
+    "type": "local",
+    "command": [
+      "npx",
+      "-y",
+      "@softeria/ms-365-mcp-server",
+      "--org-mode",
+      "--enabled-tools",
+      "list-mail|send-mail|list-calendar|get-calendar-events|create-calendar-event|update-calendar-event|delete-calendar-event|get-calendar-view|list-joined-teams|list-team-channels|send-channel-message|list-chats|get-chat|send-chat-message"
+    ],
+    "enabled": false
+  },
+  "minutes-mcp": {
+    "type": "local",
+    "command": [
+      "npx",
+      "minutes-mcp"
+    ],
+    "enabled": true
+  },
+  "qmd": {
+    "type": "local",
+    "command": [
+      "qmd",
+      "mcp"
+    ],
+    "enabled": true
   }
+},
+"plugin": [
+  "@honcho-ai/opencode-honcho"
+],
+"command": {
+  "honcho:config": {
+    "description": "Change shared OpenCode Honcho config values.",
+    "template": "Use the native Honcho config UI backed by `~/.honcho/config.json`. Show the available config fields, verify the selected field still exists case-insensitively in `~/.honcho/config.json`, then ask `What should it be set to:`. If the field has presets, ask `What should it be set to: <preset options>`. If `~/.honcho/config.json` does not exist, tell the user that the config does not exist there."
+  }
+}
 }
